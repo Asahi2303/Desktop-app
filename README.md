@@ -1,6 +1,6 @@
 # Jolly Children Academic Center - Desktop School Management System
 
-A comprehensive cross-platform desktop application built with Electron and React for managing school operations, student records, attendance, grading, billing, and more.
+A cross-platform desktop application built with Electron and React for managing school operations, student records, attendance, grading, staff, and more.
 
 ## 🎯 Features
 
@@ -10,7 +10,6 @@ A comprehensive cross-platform desktop application built with Electron and React
 - **Enrollment** - Multi-step student enrollment process
 - **Attendance** - Daily attendance tracking with statistics
 - **Grading** - Academic performance and grade management
-- **Billing** - Invoice generation and payment tracking
 - **Staff Management** - Employee records and role management
 - **Communications** - Announcements and messaging system
 - **Reports** - Comprehensive reporting with export options
@@ -24,6 +23,7 @@ A comprehensive cross-platform desktop application built with Electron and React
 - 📄 Comprehensive reporting with PDF/Excel export
 - 🔄 Real-time data synchronization
 - 🖥️ Cross-platform desktop application (Windows, macOS, Linux)
+ - ✉️ Staff onboarding via email invite or manual invite link (Supabase)
 
 ## 🚀 Getting Started
 
@@ -102,8 +102,6 @@ src/
 │   │   └── Attendance.tsx     # Attendance tracking
 │   ├── Grading/
 │   │   └── Grading.tsx         # Grade management
-│   ├── Billing/
-│   │   └── Billing.tsx         # Invoice and payment management
 │   ├── Staff/
 │   │   └── Staff.tsx          # Staff management
 │   ├── Communications/
@@ -173,13 +171,16 @@ Password: teacher123
 - Multi-step enrollment wizard
 - Form validation and error handling
 - Academic year and grade selection
-- Payment information collection
+- Dynamic sections per grade (Grade 1–10 have specific section names)
+- Final step is Parent/Guardian (no payment step)
 
 ### Attendance
 - Daily attendance marking
 - Class-wise attendance tracking
 - Attendance statistics and reports
 - Export functionality
+- Semi-persistent Admin Activity Log per date/grade/section
+- Safe upsert to avoid duplicate record errors
 
 ### Grading
 - Subject-wise grade entry
@@ -187,17 +188,13 @@ Password: teacher123
 - Academic performance tracking
 - Report card generation
 
-### Billing
-- Invoice generation and management
-- Payment tracking and history
-- Outstanding balance monitoring
-- Financial reporting
-
 ### Staff Management
 - Employee record management
 - Role and permission assignment
 - Department organization
 - Contact information management
+- Send email invites (when SMTP is configured)
+- Generate manual invite links directly in the app
 
 ### Communications
 - Announcement system
@@ -252,6 +249,24 @@ REACT_APP_API_URL=http://localhost:3001/api
 REACT_APP_APP_NAME=Jolly Children Academic Center
 ```
 
+#### Supabase (Renderer)
+Add your Supabase client credentials so the renderer can talk to your project:
+```
+REACT_APP_SUPABASE_URL=your-project-url
+REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+```
+
+#### Supabase Admin (Electron main)
+These are used by the Electron main process to send staff invites and generate invite links:
+```
+SUPABASE_URL=your-project-url
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_REDIRECT_TO=http://localhost:3000  # or your deployed app URL
+```
+Notes:
+- Do NOT prefix Electron main variables with REACT_APP_.
+- Ensure the value of SUPABASE_REDIRECT_TO is allowlisted in Supabase Auth → Settings → Redirect URLs.
+
 ### Electron Configuration
 The Electron main process is configured in `public/electron.js` with:
 - Security best practices
@@ -277,6 +292,25 @@ The built application will be available in the `dist/` directory with platform-s
 - **Windows**: `.exe` installer
 - **macOS**: `.dmg` disk image
 - **Linux**: `.AppImage` portable application
+
+## 👥 Staff onboarding (email or manual invite link)
+
+You can onboard staff users via Supabase directly from the desktop app:
+
+- In the app, go to Staff → Create, enter the email and role, and choose “Send app invite.” If SMTP is not configured or fails, use “Generate Invite Link” to create a manual link you can copy and share.
+- You can also generate an invite from the table via the row action menu.
+
+CLI option (optional):
+- A helper script is available to generate an invite link from the terminal if you prefer: `npm run send-invite` (ensure SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and SUPABASE_REDIRECT_TO are set in `.env`).
+
+The invite/recovery link will take the user to Supabase’s hosted flow to set their password, after which they can log into the desktop app.
+
+### SMTP troubleshooting for invite emails
+If you see a 500 “Error sending invite email” from Supabase:
+- Verify SMTP settings in Supabase Auth → Email (host, port, username, password, TLS/SSL).
+- Ensure your sender address/domain is verified with your provider and that SPF/DKIM/DMARC are correctly configured.
+- Set Auth → Site URL and allowlist your redirect URL(s) (must include the value of SUPABASE_REDIRECT_TO).
+- Try sending again using the in-app “Resend Invite” or use “Generate Invite Link” as a fallback while SMTP is being fixed.
 
 ## 🚀 Deployment
 
@@ -339,12 +373,17 @@ If you encounter symbolic link errors during the build process:
 - **Permission Errors**: Run terminal as administrator
 - **Build Failures**: Clear node_modules and reinstall: `rm -rf node_modules && npm install`
 
+### Supabase email invite issues
+- 500 during invite: Usually SMTP misconfiguration. Double-check SMTP credentials and encryption, verify domain, and confirm sender address.
+- No email received: Check provider suppression/bounce lists, spam folder, and DNS records (SPF/DKIM).
+- Can’t complete invite: Use the in-app “Generate Invite Link” and share it directly.
+
 ## 🔮 Future Enhancements
 
 - **Mobile App**: Companion mobile application
 - **Cloud Sync**: Real-time data synchronization
 - **Advanced Analytics**: Machine learning insights
-- **Integration**: Third-party service integrations
+- **Integration**: Third-party service integrations (e.g., email providers)
 - **Multi-language**: Internationalization support
 - **Offline Mode**: Offline functionality with sync
 
@@ -358,6 +397,4 @@ If you encounter symbolic link errors during the build process:
 ---
 
 Built with ❤️ for educational excellence
-#   j o l l y - c h i l d r e n - s c h o o l - m a n a g e m e n t  
- #   j o l l y - c h i l d r e n - s c h o o l - m a n a g e m e n t  
- 
+ 

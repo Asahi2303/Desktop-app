@@ -10,7 +10,7 @@ import {
   Alert,
   CircularProgress,
 } from '@mui/material';
-import { School, Lock, Email } from '@mui/icons-material';
+import { Lock, Email } from '@mui/icons-material';
 
 interface LoginProps {
   onLogin: (credentials: { email: string; password: string }) => Promise<void>;
@@ -49,7 +49,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        backgroundColor: '#e8f5e9', // light green background
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -60,7 +60,17 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <Card sx={{ maxWidth: 400, mx: 'auto', boxShadow: 3 }}>
           <CardContent sx={{ p: 4 }}>
             <Box sx={{ textAlign: 'center', mb: 4 }}>
-              <School sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+                <img
+                  src={process.env.PUBLIC_URL + '/images-removebg-preview.png'}
+                  alt="School Logo"
+                  style={{ width: 96, height: 96, borderRadius: 12, objectFit: 'contain' }}
+                  onError={(e: any) => {
+                    // fallback to icon if logo not found
+                    e.currentTarget.style.display = 'none';
+                  }}
+                />
+              </Box>
               <Typography variant="h4" component="h1" gutterBottom color="primary" fontWeight="bold">
                 Jolly Children Academic Center
               </Typography>

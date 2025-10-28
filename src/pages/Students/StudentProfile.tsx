@@ -17,18 +17,17 @@ import {
   ListItemIcon,
 } from '@mui/material';
 import {
-  Edit,
   School,
   CheckCircle,
   Grade,
-  Payment,
   Phone,
   Email,
   LocationOn,
   CalendarToday,
 } from '@mui/icons-material';
 import { useParams, useNavigate } from 'react-router-dom';
-import { studentsService, Student } from '../../services/database';
+import { studentsService, gradesService, attendanceService, Student, Grade as GradeRecord, Attendance as AttendanceRecord } from '../../services/database';
+import type { User } from '../../services/auth';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -59,12 +58,22 @@ interface StudentDisplay extends Student {
   enrollmentDate: string;
 }
 
-const StudentProfile: React.FC = () => {
+interface StudentProfileProps { currentUser?: User }
+
+const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [tabValue, setTabValue] = useState(0);
   const [student, setStudent] = useState<StudentDisplay | null>(null);
-  const [studentGrades, setStudentGrades] = useState<any[]>([]);
+  const [studentGrades, setStudentGrades] = useState<{
+    subject: string;
+    assignment: string;
+    percentage: number;
+    descriptor: string;
+    term: string;
+    date: string;
+  }[]>([]);
+  const [studentAttendance, setStudentAttendance] = useState<AttendanceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,9 +114,25 @@ const StudentProfile: React.FC = () => {
       if (!id) return;
       
       try {
-        // For now, we'll use empty array since grades service needs to be enhanced
-        // TODO: Implement getByStudent in gradesService and load real data
-        setStudentGrades([]);
+        const rawGrades = await gradesService.getByStudent(Number(id));
+        const describePerformance = (pct: number): string => {
+          if (pct >= 90) return 'Outstanding';
+          if (pct >= 85) return 'Very Satisfactory';
+          if (pct >= 80) return 'Satisfactory';
+          if (pct >= 75) return 'Fairly Satisfactory';
+          return 'Did Not Meet Expectations';
+        };
+        const mapped = rawGrades.map((g: GradeRecord) => ({
+          subject: g.subject,
+          assignment: g.notes || '—',
+          percentage: Number(g.grade) || 0,
+          descriptor: describePerformance(Number(g.grade) || 0),
+          term: g.academic_year || '—',
+          date: g.created_at,
+        }));
+        // Most recent first
+        mapped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setStudentGrades(mapped);
       } catch (error) {
         console.error('Error loading student grades:', error);
         setStudentGrades([]);
@@ -117,6 +142,22 @@ const StudentProfile: React.FC = () => {
     loadStudentGrades();
   }, [id]);
 
+  useEffect(() => {
+    const loadStudentAttendance = async () => {
+      if (!id) return;
+      try {
+        const records = await attendanceService.getByStudent(Number(id));
+        // Sort recent first
+        records.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        setStudentAttendance(records);
+      } catch (error) {
+        console.error('Error loading attendance:', error);
+        setStudentAttendance([]);
+      }
+    };
+    loadStudentAttendance();
+  }, [id]);
+
   const initials = useMemo(() => {
     if (!student) return '??';
     const f = student.firstName?.[0] || '?';
@@ -124,28 +165,7 @@ const StudentProfile: React.FC = () => {
     return `${f}${l}`;
   }, [student]);
 
-  const attendanceRecords = [
-    { date: '2024-01-15', status: 'Present', subject: 'Math' },
-    { date: '2024-01-14', status: 'Present', subject: 'Science' },
-    { date: '2024-01-13', status: 'Absent', subject: 'English' },
-    { date: '2024-01-12', status: 'Present', subject: 'History' },
-    { date: '2024-01-11', status: 'Late', subject: 'Math' },
-  ];
-
-  const gradeRecords = [
-    { subject: 'Mathematics', grade: 'A', percentage: 95, term: 'Fall 2023' },
-    { subject: 'Science', grade: 'A-', percentage: 92, term: 'Fall 2023' },
-    { subject: 'English', grade: 'B+', percentage: 88, term: 'Fall 2023' },
-    { subject: 'History', grade: 'A', percentage: 94, term: 'Fall 2023' },
-    { subject: 'Art', grade: 'A+', percentage: 98, term: 'Fall 2023' },
-  ];
-
-  const paymentRecords = [
-    { date: '2024-01-01', amount: 500, status: 'Paid', description: 'Monthly Tuition' },
-    { date: '2023-12-01', amount: 500, status: 'Paid', description: 'Monthly Tuition' },
-    { date: '2023-11-01', amount: 500, status: 'Paid', description: 'Monthly Tuition' },
-    { date: '2023-10-01', amount: 500, status: 'Overdue', description: 'Monthly Tuition' },
-  ];
+  // Removed hardcoded attendance/grades/payments; data now comes from DB
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -156,17 +176,17 @@ const StudentProfile: React.FC = () => {
       case 'Present': return 'success';
       case 'Absent': return 'error';
       case 'Late': return 'warning';
-      case 'Paid': return 'success';
-      case 'Overdue': return 'error';
       default: return 'default';
     }
   };
-
-  const getGradeColor = (grade: string) => {
-    if (grade.includes('A')) return 'success';
-    if (grade.includes('B')) return 'info';
-    if (grade.includes('C')) return 'warning';
-    return 'error';
+  const getDescriptorColor = (desc: string) => {
+    switch (desc) {
+      case 'Outstanding': return 'success';
+      case 'Very Satisfactory': return 'info';
+      case 'Satisfactory': return 'primary';
+      case 'Fairly Satisfactory': return 'warning';
+      default: return 'error';
+    }
   };
 
   if (loading) {
@@ -217,12 +237,7 @@ const StudentProfile: React.FC = () => {
         >
           ← Back to Students
         </Button>
-        <Button
-          variant="contained"
-          startIcon={<Edit />}
-        >
-          Edit Student
-        </Button>
+        {/* Edit Student button removed as requested */}
       </Box>
 
       {/* Student Header */}
@@ -274,7 +289,6 @@ const StudentProfile: React.FC = () => {
             <Tab icon={<School />} label="Details" />
             <Tab icon={<CheckCircle />} label="Attendance" />
             <Tab icon={<Grade />} label="Grades" />
-            <Tab icon={<Payment />} label="Payments" />
           </Tabs>
         </Box>
 
@@ -309,14 +323,14 @@ const StudentProfile: React.FC = () => {
         <TabPanel value={tabValue} index={1}>
           <Typography variant="h6" gutterBottom>Recent Attendance</Typography>
           <List>
-            {attendanceRecords.map((record, index) => (
-              <ListItem key={index} divider>
+            {studentAttendance.slice(0, 20).map((record, index) => (
+              <ListItem key={record.id || index} divider>
                 <ListItemIcon>
                   <CheckCircle color={getStatusColor(record.status) as any} />
                 </ListItemIcon>
                 <ListItemText
-                  primary={`${record.subject} - ${new Date(record.date).toLocaleDateString()}`}
-                  secondary={record.status}
+                  primary={new Date(record.date).toLocaleDateString()}
+                  secondary={record.notes || ''}
                 />
                 <Chip
                   label={record.status}
@@ -325,6 +339,9 @@ const StudentProfile: React.FC = () => {
                 />
               </ListItem>
             ))}
+            {studentAttendance.length === 0 && (
+              <Typography variant="body2" color="text.secondary">No attendance records.</Typography>
+            )}
           </List>
         </TabPanel>
 
@@ -339,9 +356,9 @@ const StudentProfile: React.FC = () => {
                 />
                 <Box sx={{ display: 'flex', gap: 1 }}>
                   <Chip
-                    label={record.grade}
+                    label={record.descriptor}
                     size="small"
-                    color={getGradeColor(record.grade) as any}
+                    color={getDescriptorColor(record.descriptor) as any}
                   />
                   <Chip
                     label={`${record.percentage}%`}
@@ -356,30 +373,7 @@ const StudentProfile: React.FC = () => {
             )}
           </List>
         </TabPanel>
-
-        <TabPanel value={tabValue} index={3}>
-          <Typography variant="h6" gutterBottom>Payment History</Typography>
-          <List>
-            {paymentRecords.map((record, index) => (
-              <ListItem key={index} divider>
-                <ListItemText
-                  primary={record.description}
-                  secondary={new Date(record.date).toLocaleDateString()}
-                />
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Typography variant="body2" sx={{ alignSelf: 'center' }}>
-                    ${record.amount}
-                  </Typography>
-                  <Chip
-                    label={record.status}
-                    size="small"
-                    color={getStatusColor(record.status) as any}
-                  />
-                </Box>
-              </ListItem>
-            ))}
-          </List>
-        </TabPanel>
+        {/* Payments tab removed as requested */}
       </Card>
     </Box>
   );

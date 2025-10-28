@@ -15,19 +15,16 @@ import {
   Stepper,
   Step,
   StepLabel,
-  StepContent,
-  Paper,
-  Divider,
   Alert,
   Snackbar,
 } from '@mui/material';
 import {
   Person,
   School,
-  Payment,
   CheckCircle,
 } from '@mui/icons-material';
 import { studentsService, StudentInsert } from '../../services/database';
+import { getSectionsForGrade } from '../../lib/gradeSections';
 
 const Enrollment: React.FC = () => {
   const navigate = useNavigate();
@@ -39,6 +36,7 @@ const Enrollment: React.FC = () => {
     email: '',
     phone: '',
     dateOfBirth: '',
+  lrn: '',
     address: '',
     gender: '',
     
@@ -56,11 +54,7 @@ const Enrollment: React.FC = () => {
     emergencyContact: '',
     emergencyPhone: '',
     
-    // Payment Information
-    paymentMethod: '',
-    tuitionAmount: 500,
-    discount: 0,
-    notes: '',
+    // Payment Information (removed)
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -94,7 +88,6 @@ const Enrollment: React.FC = () => {
     { label: 'Student Information', icon: <Person /> },
     { label: 'Academic Details', icon: <School /> },
     { label: 'Parent/Guardian', icon: <Person /> },
-    { label: 'Payment & Review', icon: <Payment /> },
   ];
 
   const handleInputChange = (field: string, value: string) => {
@@ -116,6 +109,8 @@ const Enrollment: React.FC = () => {
         if (!formData.phone) newErrors.phone = 'Phone is required';
         if (!formData.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required';
         if (!formData.gender) newErrors.gender = 'Gender is required';
+        if (!formData.lrn) newErrors.lrn = 'LRN is required';
+        else if (!/^\d+$/.test(String(formData.lrn))) newErrors.lrn = 'LRN must be numeric';
         break;
       case 1:
         if (!formData.grade) newErrors.grade = 'Grade is required';
@@ -152,6 +147,7 @@ const Enrollment: React.FC = () => {
           first_name: formData.firstName,
           last_name: formData.lastName,
           email: formData.email,
+          lrn: formData.lrn || undefined,
           grade: formData.grade,
           section: formData.section,
           status: 'Active',
@@ -232,6 +228,17 @@ const Enrollment: React.FC = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
+                label="LRN"
+                value={formData.lrn}
+                onChange={(e) => handleInputChange('lrn', e.target.value.trim())}
+                error={!!errors.lrn}
+                helperText={errors.lrn}
+                required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
                 label="Date of Birth"
                 type="date"
                 value={formData.dateOfBirth}
@@ -240,6 +247,14 @@ const Enrollment: React.FC = () => {
                 helperText={errors.dateOfBirth}
                 InputLabelProps={{ shrink: true }}
                 required
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Address"
+                value={formData.address}
+                onChange={(e) => handleInputChange('address', e.target.value)}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -255,16 +270,6 @@ const Enrollment: React.FC = () => {
                   <MenuItem value="Other">Other</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Address"
-                multiline
-                rows={2}
-                value={formData.address}
-                onChange={(e) => handleInputChange('address', e.target.value)}
-              />
             </Grid>
           </Grid>
         );
@@ -295,12 +300,19 @@ const Enrollment: React.FC = () => {
                   value={formData.section}
                   onChange={(e) => handleInputChange('section', e.target.value)}
                   label="Section"
+                  disabled={!formData.grade}
                 >
-                  {['A', 'B', 'C', 'D'].map(section => (
-                    <MenuItem key={section} value={section}>
-                      Section {section}
+                  {getSectionsForGrade(formData.grade).length === 0 ? (
+                    <MenuItem disabled value="">
+                      {formData.grade ? 'No sections configured for this grade' : 'Select grade first'}
                     </MenuItem>
-                  ))}
+                  ) : (
+                    getSectionsForGrade(formData.grade).map(section => (
+                      <MenuItem key={section} value={section}>
+                        {section}
+                      </MenuItem>
+                    ))
+                  )}
                 </Select>
               </FormControl>
             </Grid>
@@ -390,66 +402,6 @@ const Enrollment: React.FC = () => {
                 value={formData.emergencyPhone}
                 onChange={(e) => handleInputChange('emergencyPhone', e.target.value)}
               />
-            </Grid>
-          </Grid>
-        );
-
-      case 3:
-        return (
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Payment Method</InputLabel>
-                <Select
-                  value={formData.paymentMethod}
-                  onChange={(e) => handleInputChange('paymentMethod', e.target.value)}
-                  label="Payment Method"
-                >
-                  <MenuItem value="Monthly">Monthly</MenuItem>
-                  <MenuItem value="Quarterly">Quarterly</MenuItem>
-                  <MenuItem value="Annually">Annually</MenuItem>
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Tuition Amount"
-                type="number"
-                value={formData.tuitionAmount}
-                onChange={(e) => handleInputChange('tuitionAmount', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Discount (%)"
-                type="number"
-                value={formData.discount}
-                onChange={(e) => handleInputChange('discount', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Notes"
-                multiline
-                rows={3}
-                value={formData.notes}
-                onChange={(e) => handleInputChange('notes', e.target.value)}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Paper sx={{ p: 2, bgcolor: 'grey.50' }}>
-                <Typography variant="h6" gutterBottom>Enrollment Summary</Typography>
-                <Typography><strong>Student:</strong> {formData.firstName} {formData.lastName}</Typography>
-                <Typography><strong>Grade:</strong> Grade {formData.grade}, Section {formData.section}</Typography>
-                <Typography><strong>Parent:</strong> {formData.parentName}</Typography>
-                <Typography><strong>Tuition:</strong> ${formData.tuitionAmount}</Typography>
-                {formData.discount > 0 && (
-                  <Typography><strong>Discount:</strong> {formData.discount}%</Typography>
-                )}
-              </Paper>
             </Grid>
           </Grid>
         );

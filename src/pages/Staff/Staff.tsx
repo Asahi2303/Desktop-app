@@ -37,11 +37,14 @@ import {
   Delete,
   Visibility,
   Person,
-  Email,
   Phone,
-  Work,
+  Email,
+  LockReset,
+  Key,
 } from '@mui/icons-material';
+import { createStaffUser, generateRecoveryLink, setUserPassword, createOrUpdateUserWithPassword } from '../../services/admin';
 import { staffService, Staff as StaffType, StaffInsert, StaffUpdate } from '../../services/database';
+ 
 
 // Transform the database staff to match component interface
 interface StaffDisplay extends StaffType {
@@ -59,6 +62,11 @@ const Staff: React.FC = () => {
   const [staffMembers, setStaffMembers] = useState<StaffDisplay[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  // Removed invite/recovery link dialogs to simplify flow
+  const [setPwDialogOpen, setSetPwDialogOpen] = useState(false);
+  const [setPwValue, setSetPwValue] = useState('');
+  const [setPwEmail, setSetPwEmail] = useState('');
   const [form, setForm] = useState<Omit<StaffType, 'id' | 'created_at' | 'updated_at'>>({
     first_name: '',
     last_name: '',
@@ -70,6 +78,8 @@ const Staff: React.FC = () => {
     hire_date: '',
     avatar_url: undefined,
   });
+  const [sendInvite, setSendInvite] = useState(false);
+  const [appRole, setAppRole] = useState<'Admin' | 'Teacher' | 'Staff'>('Staff');
 
   // Load staff from database
   const loadStaff = async () => {
@@ -148,6 +158,8 @@ const Staff: React.FC = () => {
       avatar_url: undefined,
     });
     setStaffDialogOpen(true);
+    setSendInvite(true);
+    setAppRole('Staff');
   };
 
   const handleEditStaff = (staff: StaffDisplay) => {
@@ -183,6 +195,8 @@ const Staff: React.FC = () => {
     }
   };
 
+  // Invite flow removed in favor of direct credential management
+
   const handleSaveStaff = async () => {
     try {
       if (selectedStaff) {
@@ -213,6 +227,8 @@ const Staff: React.FC = () => {
           avatar_url: form.avatar_url,
         };
         await staffService.create(newStaff);
+
+        // Invite email flow removed; credentials can be set via Set Password (Admin)
       }
       await loadStaff(); // Refresh the list
       setStaffDialogOpen(false);
@@ -225,6 +241,8 @@ const Staff: React.FC = () => {
   const handleFormChange = (field: keyof typeof form, value: any) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
+
+  // Invite link flow removed
 
   return (
     <Box>
@@ -403,6 +421,37 @@ const Staff: React.FC = () => {
                           <Visibility />
                         </IconButton>
                       </Tooltip>
+                      {/* Resend Invite removed */}
+                      {/* Optional: Reset Password Link (hosted form). Commented out to simplify.
+                      <Tooltip title="Reset Password Link (Hosted Form)">
+                        <IconButton
+                          size="small"
+                          onClick={async () => {
+                            try {
+                              const link = await generateRecoveryLink({ email: member.email, redirectTo: null });
+                              // Copy to clipboard
+                              await navigator.clipboard.writeText(link);
+                              setSuccess('Reset link copied to clipboard');
+                            } catch (e: any) {
+                              setError(e?.message || 'Failed to generate recovery link');
+                            }
+                          }}
+                        >
+                          <LockReset />
+                        </IconButton>
+                      </Tooltip>*/}
+                      <Tooltip title="Set Password (Admin)">
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setSetPwEmail(member.email);
+                            setSetPwValue('');
+                            setSetPwDialogOpen(true);
+                          }}
+                        >
+                          <Key />
+                        </IconButton>
+                      </Tooltip>
                       <Tooltip title="Edit Staff">
                         <IconButton
                           size="small"
@@ -525,6 +574,37 @@ const Staff: React.FC = () => {
                 placeholder="Additional notes about the staff member..."
               />
             </Grid>
+            {/* Removed invite/reset link buttons for a simpler credentials flow */}
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>App Role</InputLabel>
+                <Select
+                  label="App Role"
+                  value={appRole}
+                  onChange={(e) => setAppRole(e.target.value as any)}
+                >
+                  <MenuItem value="Staff">Staff</MenuItem>
+                  <MenuItem value="Teacher">Teacher</MenuItem>
+                  <MenuItem value="Admin">Admin</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+                <FormControl>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <input
+                      type="checkbox"
+                      id="send-invite"
+                      checked={sendInvite}
+                      onChange={(e) => setSendInvite(e.target.checked)}
+                      style={{ width: 16, height: 16 }}
+                    />
+                    <label htmlFor="send-invite">Send app invite to this email</label>
+                  </Box>
+                </FormControl>
+              </Box>
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -547,6 +627,56 @@ const Staff: React.FC = () => {
       >
         <Alert onClose={() => setError(null)} severity="error">
           {error}
+        </Alert>
+      </Snackbar>
+      {/* Invite/Reset link dialog removed for simplified flow */}
+      {/* Admin Set Password Dialog */}
+      <Dialog open={setPwDialogOpen} onClose={() => setSetPwDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Set Password (Admin)</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Set a new password for: <strong>{setPwEmail}</strong>
+          </Typography>
+          <TextField
+            fullWidth
+            type="password"
+            label="New Password"
+            value={setPwValue}
+            onChange={(e) => setSetPwValue(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSetPwDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={async () => {
+              try {
+                if (!setPwEmail || !setPwValue) {
+                  setError('Email and password are required');
+                  return;
+                }
+                // Create or update credentials without email flow
+                await createOrUpdateUserWithPassword({ email: setPwEmail, password: setPwValue });
+                setSuccess('Credentials saved. The user can log in now.');
+                setSetPwDialogOpen(false);
+                setSetPwValue('');
+              } catch (e: any) {
+                setError(e?.message || 'Failed to set credentials');
+              }
+            }}
+          >
+            Save Password
+          </Button>
+        </DialogActions>
+      </Dialog>
+      {/* Success Notification */}
+      <Snackbar
+        open={!!success}
+        autoHideDuration={3000}
+        onClose={() => setSuccess(null)}
+      >
+        <Alert onClose={() => setSuccess(null)} severity="success">
+          {success}
         </Alert>
       </Snackbar>
     </Box>

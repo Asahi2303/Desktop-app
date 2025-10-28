@@ -43,6 +43,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { studentsService, attendanceService, Attendance as AttendanceType, AttendanceInsert } from '../../services/database';
+import { getSectionsForGrade } from '../../lib/gradeSections';
 
 interface StudentAttendance {
   id: number;
@@ -78,7 +79,52 @@ const Attendance: React.FC = () => {
   const [adminName] = useState('Admin User'); // In a real app, this would come from auth context
 
   const grades = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
-  const sections = ['A', 'B', 'C', 'D'];
+
+  // --- Semi-persistent Admin Activity Log helpers ---
+  const getLogStorageKey = (date: Date, grade: string, section: string) => {
+    const dateStr = date.toISOString().slice(0, 10);
+    return `attendanceLog:${dateStr}:${grade}:${section}`;
+  };
+
+  const serializeLog = (log: AdminActivity[]) =>
+    log.map((item) => ({ ...item, timestamp: item.timestamp.toISOString() }));
+
+  const deserializeLog = (raw: any[]): AdminActivity[] =>
+    (raw || []).map((item) => ({ ...item, timestamp: new Date(item.timestamp) }));
+
+  const loadActivityLog = () => {
+    if (!selectedGrade || !selectedSection) {
+      setAdminActivityLog([]);
+      return;
+    }
+    try {
+      const key = getLogStorageKey(selectedDate, selectedGrade, selectedSection);
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setAdminActivityLog(deserializeLog(parsed));
+      } else {
+        setAdminActivityLog([]);
+      }
+    } catch {
+      setAdminActivityLog([]);
+    }
+  };
+
+  const saveActivityLog = (nextLog: AdminActivity[]) => {
+    if (!selectedGrade || !selectedSection) return;
+    try {
+      const key = getLogStorageKey(selectedDate, selectedGrade, selectedSection);
+      localStorage.setItem(key, JSON.stringify(serializeLog(nextLog)));
+    } catch {
+      // ignore storage errors
+    }
+  };
+
+  // Reload log whenever the selection changes
+  useEffect(() => {
+    loadActivityLog();
+  }, [selectedDate, selectedGrade, selectedSection]);
 
   // Load students and attendance data
   const loadAttendanceData = async () => {
@@ -145,7 +191,6 @@ const Attendance: React.FC = () => {
     setAttendanceData(prev => {
       const updatedData = prev.map(student => {
         if (student.student_id === studentId) {
-          // Log the admin activity
           const activity: AdminActivity = {
             id: `${Date.now()}-${studentId}`,
             timestamp: new Date(),
@@ -156,9 +201,11 @@ const Attendance: React.FC = () => {
             newStatus: newStatus,
             details: `Changed ${student.name}'s attendance from ${student.status} to ${newStatus}`
           };
-          
-          setAdminActivityLog(prevLog => [activity, ...prevLog.slice(0, 49)]); // Keep last 50 activities
-          
+          setAdminActivityLog(prevLog => {
+            const next = [activity, ...prevLog.slice(0, 49)];
+            saveActivityLog(next);
+            return next;
+          });
           return { ...student, status: newStatus };
         }
         return student;
@@ -188,7 +235,11 @@ const Attendance: React.FC = () => {
         newStatus: 'Saved',
         details: `Saved attendance for Grade ${selectedGrade} - Section ${selectedSection} on ${selectedDate.toLocaleDateString()}`
       };
-      setAdminActivityLog(prevLog => [saveActivity, ...prevLog.slice(0, 49)]);
+      setAdminActivityLog(prevLog => {
+        const next = [saveActivity, ...prevLog.slice(0, 49)];
+        saveActivityLog(next);
+        return next;
+      });
       
       // Create attendance records for the database
       const attendanceRecords: AttendanceInsert[] = attendanceData.map(record => ({
@@ -310,11 +361,17 @@ const Attendance: React.FC = () => {
                     label="Section"
                     disabled={!selectedGrade}
                   >
-                    {sections.map(section => (
-                      <MenuItem key={section} value={section}>
-                        Section {section}
+                    {getSectionsForGrade(selectedGrade).length === 0 ? (
+                      <MenuItem disabled value="">
+                        {selectedGrade ? 'No sections configured for this grade' : 'Select grade first'}
                       </MenuItem>
-                    ))}
+                    ) : (
+                      getSectionsForGrade(selectedGrade).map(section => (
+                        <MenuItem key={section} value={section}>
+                          {section}
+                        </MenuItem>
+                      ))
+                    )}
                   </Select>
                 </FormControl>
               </Grid>
@@ -458,7 +515,7 @@ const Attendance: React.FC = () => {
             <CardContent>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Typography variant="h6">
-                  Grade {selectedGrade} - Section {selectedSection}
+                  Grade {selectedGrade} - {selectedSection}
                 </Typography>
                 <Button
                   variant="contained"

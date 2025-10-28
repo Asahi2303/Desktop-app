@@ -16,7 +16,8 @@
     "electron-pack-simple": "npm run build && electron-builder --config.win.sign=false --config.forceCodeSigning=false",
     "preelectron-pack": "npm run build",
     "setup-supabase": "node scripts/setup-supabase.js",
-    "quick-start": "node scripts/quick-start.js"
+    "quick-start": "node scripts/quick-start.js",
+    "send-invite": "node scripts/send-invite.js"
   },
   "dependencies": {
     "@emotion/react": "^11.11.1",

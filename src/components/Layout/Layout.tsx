@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Drawer,
@@ -21,35 +21,34 @@ import {
   School,
   CheckCircle,
   Grade,
-  Payment,
   Group,
-  Message,
-  Assessment,
   Settings,
   AccountCircle,
   Logout,
+  Brightness4,
+  Brightness7,
 } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
+import type { User } from '../../services/auth';
+import { useColorMode } from '../../lib/ColorModeContext';
 
 const drawerWidth = 240;
 
 interface LayoutProps {
   children: React.ReactNode;
-  user: any;
+  user: User;
   onLogout: () => void;
 }
 
-const menuItems = [
+const allMenuItems = [
   { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
   { text: 'Students', icon: <People />, path: '/students' },
   { text: 'Enrollment', icon: <School />, path: '/enrollment' },
   { text: 'Attendance', icon: <CheckCircle />, path: '/attendance' },
   { text: 'Grading', icon: <Grade />, path: '/grading' },
-  { text: 'Billing', icon: <Payment />, path: '/billing' },
   { text: 'Staff', icon: <Group />, path: '/staff' },
-  { text: 'Communications', icon: <Message />, path: '/communications' },
-  { text: 'Reports', icon: <Assessment />, path: '/reports' },
-  { text: 'Settings', icon: <Settings />, path: '/settings' },
+  { text: 'Sections', icon: <School />, path: '/admin/sections' },
+  { text: 'Profile', icon: <Settings />, path: '/settings' },
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
@@ -59,6 +58,22 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { mode, toggleMode } = useColorMode();
+
+  // Build role-based menu
+  const menuItems = useMemo(() => {
+    if (user.role === 'Admin') {
+      return allMenuItems;
+    }
+    // Staff/Teacher restricted menu
+    return [
+      // Staff/Teacher dashboard leads to a focused view
+      { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
+      { text: 'Students', icon: <People />, path: '/students' },
+      { text: 'Attendance', icon: <CheckCircle />, path: '/attendance' },
+      { text: 'Grading', icon: <Grade />, path: '/grading' },
+    ];
+  }, [user.role]);
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -80,6 +95,12 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   const drawer = (
     <Box>
       <Box sx={{ p: 2, textAlign: 'center' }}>
+        <Box
+          component="img"
+          src={process.env.PUBLIC_URL + '/logo.png'}
+          alt="Jolly Children Academic Center logo"
+          sx={{ width: 64, height: 64, objectFit: 'contain', display: 'block', mx: 'auto', mb: 1, borderRadius: 2 }}
+        />
         <Typography variant="h6" color="primary" fontWeight="bold">
           Jolly Children Academic Center
         </Typography>
@@ -143,9 +164,35 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
           >
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-            {menuItems.find(item => item.path === location.pathname)?.text || 'Dashboard'}
+          <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+            {
+              // Try exact match, then startsWith (for nested routes like /students/:id)
+              menuItems.find(item => item.path === location.pathname)?.text 
+              || menuItems.find(item => location.pathname.startsWith(item.path))?.text 
+              || 'Dashboard'
+            }
+            <Box component="span">
+              {/* Role badge */}
+              <Typography
+                variant="caption"
+                sx={{
+                  ml: 1,
+                  px: 1,
+                  py: 0.25,
+                  borderRadius: 1,
+                  bgcolor: 'rgba(255,255,255,0.2)'
+                }}
+              >
+                {user.role}
+              </Typography>
+            </Box>
           </Typography>
+          {/* Theme toggle */}
+          <IconButton sx={{ mr: 1 }} color="inherit" onClick={toggleMode} aria-label="Toggle theme">
+            {mode === 'dark' ? <Brightness7 /> : <Brightness4 />}
+          </IconButton>
+          {/* Academic year selector removed per request */}
+
           <IconButton
             size="large"
             aria-label="account of current user"
@@ -173,7 +220,7 @@ const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
             open={Boolean(anchorEl)}
             onClose={handleClose}
           >
-            <MenuItem onClick={handleClose}>
+            <MenuItem onClick={() => { navigate('/settings'); handleClose(); }}>
               <AccountCircle sx={{ mr: 1 }} />
               Profile
             </MenuItem>

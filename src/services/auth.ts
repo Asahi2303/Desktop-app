@@ -47,6 +47,15 @@ const getFallbackAuth = (credentials: LoginCredentials): User => {
   }
 };
 
+const ALLOWED_ROLES = ['Admin', 'Teacher', 'Staff'] as const;
+type AllowedRole = typeof ALLOWED_ROLES[number];
+
+function ensureAllowedRole(role: string | undefined): asserts role is AllowedRole {
+  if (!role || !ALLOWED_ROLES.includes(role as AllowedRole)) {
+    throw new Error('Access denied: This application is only for Admins and Staff/Teachers.');
+  }
+}
+
 export const authService = {
   async signIn(credentials: LoginCredentials): Promise<User> {
     try {
@@ -92,6 +101,9 @@ export const authService = {
 
         if (insertError) throw insertError;
 
+        // Enforce role restrictions
+        ensureAllowedRole(defaultProfile.role);
+
         return {
           id: defaultProfile.id,
           email: defaultProfile.email,
@@ -100,6 +112,9 @@ export const authService = {
           avatar: defaultProfile.avatar_url,
         };
       }
+
+      // Enforce role restrictions
+      ensureAllowedRole((profile as any)?.role);
 
       return {
         id: profile.id,
@@ -112,6 +127,13 @@ export const authService = {
       console.warn('Database connection failed, using fallback authentication:', error);
       return getFallbackAuth(credentials);
     }
+  },
+
+  async changePassword(newPassword: string): Promise<void> {
+    const { data: { user } } = await supabaseClient.auth.getUser();
+    if (!user) throw new Error('No authenticated user');
+    const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+    if (error) throw error;
   },
 
   async signOut(): Promise<void> {
@@ -138,6 +160,9 @@ export const authService = {
         .single();
 
       if (error) return null;
+
+      // Enforce role restrictions
+      ensureAllowedRole((profile as any)?.role);
 
       return {
         id: profile.id,

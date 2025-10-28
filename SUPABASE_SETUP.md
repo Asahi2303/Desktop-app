@@ -29,15 +29,35 @@ This guide will help you connect your Jolly Children Academic Center desktop app
 
 ## Step 3: Configure Environment Variables
 
-1. Create a `.env` file in your project root (if it doesn't exist)
-2. Add your Supabase credentials:
+1. Copy the example file to a real `.env` file
 
-```env
-REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co
-REACT_APP_SUPABASE_ANON_KEY=your-anon-key-here
-```
+   Windows PowerShell:
+   ```powershell
+   Copy-Item -Path env.example -Destination .env -Force
+   ```
 
-**Important**: Replace the placeholder values with your actual Supabase credentials.
+2. Edit `.env` and set your Supabase credentials:
+
+   ```env
+   REACT_APP_SUPABASE_URL=https://your-project-id.supabase.co
+   REACT_APP_SUPABASE_ANON_KEY=your-anon-key-here
+   ```
+
+3. Optional: Electron (main process) variables for MongoDB and scripts
+
+   ```env
+   # Used by Electron main process if present
+   MONGODB_URI=mongodb://127.0.0.1:27017
+   MONGODB_DB=my_desktop_app
+
+   # Used only by setup scripts
+   SUPABASE_SERVICE_ROLE_KEY=
+   ```
+
+Notes:
+- `.env` is git-ignored and safe to edit locally.
+- React env vars must start with `REACT_APP_` to be visible in the renderer.
+- The app can start without MongoDB; it will simply skip DB-backed features in Electron.
 
 ## Step 4: Set Up the Database Schema
 
@@ -45,9 +65,16 @@ REACT_APP_SUPABASE_ANON_KEY=your-anon-key-here
 
 1. In your Supabase dashboard, go to **SQL Editor**
 2. Click "New query"
-3. Copy the entire contents of `database/schema.sql`
-4. Paste it into the SQL editor
-5. Click "Run" to execute the schema
+3. Apply these files in order in the SQL editor (each in a new query):
+   - `database/schema.sql` (legacy baseline tables)
+   - `database/create-grade-sections-table.sql` (normalized grades/sections)
+   - `database/create-section-subjects-table.sql` (subjects + teacher assignment)
+   - `database/mobile-views.sql` (mobile-friendly views and realtime publication)
+   - `database/rls_policies_all.sql` (centralized RLS policies)
+   - `database/compat-sections-view.sql` (exposes `public.sections` as a view for backward compatibility)
+4. Click "Run" for each file
+
+Note: The `rls_policies_all.sql` script enables RLS and creates Admin-only write policies; no separate RLS step is needed.
 
 ### Option B: Using the Setup Script
 
@@ -61,8 +88,9 @@ npm install dotenv
 SUPABASE_SERVICE_ROLE_KEY=your-service-role-key-here
 ```
 
-3. Run the setup script:
-```bash
+3. Run the setup script, which executes all the SQL files above in order:
+
+```powershell
 node scripts/setup-supabase.js
 ```
 
@@ -104,9 +132,9 @@ After creating the users, you need to update their roles in the database:
 
 ## Step 8: Test the Integration
 
-1. Start your React application:
-```bash
-npm start
+1. Start the desktop app in development (runs React + Electron):
+```powershell
+npm run electron-dev
 ```
 
 2. Try logging in with the demo credentials:
@@ -138,6 +166,11 @@ The application uses the following main tables:
 - **API Security**: Anon key for client-side access
 
 ## Troubleshooting
+6. Mobile app doesn’t see new grades:
+   - Ensure `database/mobile-views.sql` is applied. It creates `public.mobile_grades` and adds `public.grades` to the `supabase_realtime` publication.
+   - Mobile can query via `from('mobile_grades').select('*')` or subscribe to realtime on `grades`.
+   - Confirm RLS allows `SELECT` for authenticated on `grades` (provided by `rls_policies_all.sql`).
+
 
 ### Common Issues
 
@@ -152,6 +185,15 @@ The application uses the following main tables:
    - Ensure RLS policies are properly configured
 
 3. **Authentication not working**:
+4. **relation "public.sections" does not exist**:
+   - Cause: Some environments were initialized with only `schema.sql`, while parts of the app (or legacy readers) still reference `public.sections`.
+   - Fix: Run `database/create-grade-sections-table.sql` and `database/compat-sections-view.sql` in the SQL editor. The view maps to `public.grade_sections`.
+   - Also ensure `database/create-section-subjects-table.sql` and `database/rls_policies_all.sql` are applied.
+
+5. **Cannot add subject; teacher assignment not saved (staff_id)**:
+   - Cause: Older `section_subjects` schema used `teacher_id (uuid)`; current schema uses `staff_id BIGINT` from `public.staff`.
+   - Fix: Run `database/create-section-subjects-table.sql` to drop legacy `teacher_id` and add/ensure `staff_id BIGINT`.
+
    - Verify that the demo users exist in the Supabase dashboard
    - Check that the users have the correct roles assigned
    - Ensure the site URL is configured in Authentication settings

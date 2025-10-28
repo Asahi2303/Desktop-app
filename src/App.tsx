@@ -3,17 +3,18 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box, Alert, Snackbar } from '@mui/material';
 import Layout from './components/Layout/Layout';
 import Login from './pages/Login/Login';
+import FinishSignup from './pages/Auth/FinishSignup';
 import Dashboard from './pages/Dashboard/Dashboard';
+import TeacherDashboard from './pages/Dashboard/TeacherDashboard';
+import AccessDenied from './pages/AccessDenied/AccessDenied';
 import Students from './pages/Students/Students';
 import StudentProfile from './pages/Students/StudentProfile';
 import Enrollment from './pages/Enrollment/Enrollment';
 import Attendance from './pages/Attendance/Attendance';
 import Grading from './pages/Grading/Grading';
-import Billing from './pages/Billing/Billing';
 import Staff from './pages/Staff/Staff';
-import Communications from './pages/Communications/Communications';
-import Reports from './pages/Reports/Reports';
 import Settings from './pages/Settings/Settings';
+import SectionsManager from './pages/Admin/SectionsManager';
 import { authService, User } from './services/auth';
 
 // Authentication hook using Supabase
@@ -82,6 +83,11 @@ function App() {
   }
 
   if (!isAuthenticated) {
+    // Public finish-signup route so invite/recovery redirects don't 404 during onboarding
+    const path = window.location.pathname;
+    if (path === '/finish-signup' || path === '/auth/finish-signup') {
+      return <FinishSignup />;
+    }
     return (
       <>
         <Login onLogin={login} />
@@ -98,22 +104,69 @@ function App() {
     );
   }
 
+  // Role-aware helpers
+  const homePath = user?.role === 'Admin' ? '/dashboard' : '/students';
+
+  const RoleGate: React.FC<{ allow: Array<User['role']>; children: JSX.Element }> = ({ allow, children }) => {
+    if (!user || !allow.includes(user.role)) {
+      return <Navigate to="/access-denied" replace state={{ from: window.location.pathname }} />;
+    }
+    return children;
+  };
+
+  // At this point, user is non-null because isAuthenticated is true
+  const authedUser = user as User;
+
   return (
     <Box sx={{ display: 'flex', height: '100vh' }}>
-      <Layout user={user} onLogout={logout}>
+      <Layout user={authedUser} onLogout={logout}>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/students" element={<Students />} />
-          <Route path="/students/:id" element={<StudentProfile />} />
-          <Route path="/enrollment" element={<Enrollment />} />
+          <Route path="/" element={<Navigate to={homePath} replace />} />
+
+          {/* Dashboard: Admin vs Staff/Teacher */}
+          <Route
+            path="/dashboard"
+            element={user?.role === 'Admin' ? <Dashboard /> : <TeacherDashboard currentUser={authedUser} />}
+          />
+          <Route
+            path="/enrollment"
+            element={
+              <RoleGate allow={['Admin']}>
+                <Enrollment />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/staff"
+            element={
+              <RoleGate allow={['Admin']}>
+                <Staff />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RoleGate allow={['Admin']}>
+                <Settings />
+              </RoleGate>
+            }
+          />
+          <Route
+            path="/admin/sections"
+            element={
+              <RoleGate allow={['Admin']}>
+                <SectionsManager />
+              </RoleGate>
+            }
+          />
+
+          {/* Shared routes (Admin, Teacher, Staff) */}
+          <Route path="/students" element={<Students currentUser={authedUser} />} />
+          <Route path="/students/:id" element={<StudentProfile currentUser={authedUser} />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/grading" element={<Grading />} />
-          <Route path="/billing" element={<Billing />} />
-          <Route path="/staff" element={<Staff />} />
-          <Route path="/communications" element={<Communications />} />
-          <Route path="/reports" element={<Reports />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/access-denied" element={<AccessDenied />} />
         </Routes>
       </Layout>
     </Box>

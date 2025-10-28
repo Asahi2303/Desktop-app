@@ -18,32 +18,109 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+function splitSqlStatements(sqlText) {
+  const stmts = [];
+  let buf = '';
+  let inSingle = false;
+  let inDouble = false;
+  let inDollar = false;
+  let dollarTag = '';
+  for (let i = 0; i < sqlText.length; i++) {
+    const ch = sqlText[i];
+    const next2 = sqlText.slice(i, i + 2);
+    // Enter/exit dollar-quoted string $tag$
+    if (!inSingle && !inDouble) {
+      // Detect start of $tag$
+      if (!inDollar && ch === '$') {
+        const end = sqlText.indexOf('$', i + 1);
+        if (end > i) {
+          const tag = sqlText.slice(i, end + 1); // like $tag$
+          if (/^\$[A-Za-z0-9_]*\$/.test(tag)) {
+            inDollar = true;
+            dollarTag = tag;
+            buf += tag;
+            i = end; // jump to end of opening tag
+            continue;
+          }
+        }
+      }
+      // Detect end of $tag$
+      if (inDollar) {
+        if (sqlText.startsWith(dollarTag, i)) {
+          buf += dollarTag;
+          i += dollarTag.length - 1;
+          inDollar = false;
+          dollarTag = '';
+          continue;
+        }
+      }
+    }
+
+    if (!inDollar) {
+      if (!inDouble && ch === "'" && sqlText[i - 1] !== '\\') {
+        // toggle single-quoted literal; handle doubled quotes '' inside string by looking ahead
+        if (inSingle && sqlText[i + 1] === "'") {
+          // escaped single-quote inside string
+          buf += "''";
+          i += 1;
+          continue;
+        }
+        inSingle = !inSingle;
+      } else if (!inSingle && ch === '"' && sqlText[i - 1] !== '\\') {
+        inDouble = !inDouble;
+      }
+    }
+
+    if (!inSingle && !inDouble && !inDollar && ch === ';') {
+      const stmt = buf.trim();
+      if (stmt && !stmt.startsWith('--')) stmts.push(stmt);
+      buf = '';
+      continue;
+    }
+    buf += ch;
+  }
+  const tail = buf.trim();
+  if (tail) stmts.push(tail);
+  return stmts;
+}
+
+async function runSqlFile(filePath) {
+  const sql = fs.readFileSync(filePath, 'utf8');
+  const statements = splitSqlStatements(sql);
+  console.log(`Executing ${statements.length} statements from ${path.basename(filePath)}...`);
+  for (const statement of statements) {
+    try {
+      const { error } = await supabase.rpc('exec_sql', { sql: statement });
+      if (error) {
+        console.warn(`Warning executing statement: ${error.message}`);
+      }
+    } catch (err) {
+      console.warn(`Warning: ${err.message}`);
+    }
+  }
+}
+
 async function setupDatabase() {
   try {
     console.log('Setting up Supabase database...');
 
-    // Read and execute the schema
-    const schemaPath = path.join(__dirname, '../database/schema.sql');
-    const schema = fs.readFileSync(schemaPath, 'utf8');
+    // Execute core schema and add-ons
+    const baseDir = path.join(__dirname, '..', 'database');
+    const files = [
+      'schema.sql',
+      'create-grade-sections-table.sql',
+      'create-section-subjects-table.sql',
+      'compat-sections-view.sql',
+      'mobile-views.sql',
+      'rls_policies_all.sql',
+    ];
 
-    // Split the schema into individual statements
-    const statements = schema
-      .split(';')
-      .map(stmt => stmt.trim())
-      .filter(stmt => stmt.length > 0 && !stmt.startsWith('--'));
-
-    console.log(`Executing ${statements.length} SQL statements...`);
-
-    for (const statement of statements) {
-      if (statement.trim()) {
-        try {
-          const { error } = await supabase.rpc('exec_sql', { sql: statement });
-          if (error) {
-            console.warn(`Warning executing statement: ${error.message}`);
-          }
-        } catch (err) {
-          console.warn(`Warning: ${err.message}`);
-        }
+    for (const f of files) {
+      const full = path.join(baseDir, f);
+      if (fs.existsSync(full)) {
+        await runSqlFile(full);
+      } else {
+        console.warn(`Skipped missing SQL file: ${f}`);
       }
     }
 

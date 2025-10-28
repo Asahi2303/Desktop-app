@@ -44,7 +44,7 @@ import { studentsService, gradesService, Grade as GradeRecord, GradeInsert, Grad
 interface GradeDisplay extends Omit<GradeRecord, 'grade'> {
   studentName: string;
   assignment: string;
-  grade: string; // Letter grade (A, B, C, D)
+  grade: string; // Performance descriptor based on percentage
   percentage: number; // Numeric grade
   date: string;
   term: string;
@@ -65,14 +65,39 @@ const Grading: React.FC = () => {
   const [formStudentId, setFormStudentId] = useState<number | ''>('');
   const [formSubject, setFormSubject] = useState('');
   const [formAssignment, setFormAssignment] = useState('');
-  const [formGrade, setFormGrade] = useState('');
   const [formPercentage, setFormPercentage] = useState<number | ''>('');
   const [formDate, setFormDate] = useState('');
   const [formTerm, setFormTerm] = useState('');
+  const [formQuarter, setFormQuarter] = useState<'Q1' | 'Q2' | 'Q3' | 'Q4' | ''>('');
 
   const subjects = ['Mathematics', 'Science', 'English', 'History', 'Art', 'Physical Education'];
   const terms = ['Fall 2023', 'Spring 2024', 'Summer 2024'];
   const grades = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+  const quarters: { label: string; value: 'Q1' | 'Q2' | 'Q3' | 'Q4' }[] = [
+    { label: '1st Quarter', value: 'Q1' },
+    { label: '2nd Quarter', value: 'Q2' },
+    { label: '3rd Quarter', value: 'Q3' },
+    { label: '4th Quarter', value: 'Q4' },
+  ];
+
+  const quarterLabel = (q?: string) => {
+    switch (q) {
+      case 'Q1': return '1st Quarter';
+      case 'Q2': return '2nd Quarter';
+      case 'Q3': return '3rd Quarter';
+      case 'Q4': return '4th Quarter';
+      default: return '';
+    }
+  };
+
+  // Map numeric percentage to performance descriptor
+  const describePerformance = (pct: number): string => {
+    if (pct >= 90) return 'Outstanding';
+    if (pct >= 85) return 'Very Satisfactory';
+    if (pct >= 80) return 'Satisfactory';
+    if (pct >= 75) return 'Fairly Satisfactory';
+    return 'Did Not Meet Expectations';
+  };
 
   // Load grades and students from database
   const loadGrades = async () => {
@@ -87,14 +112,15 @@ const Grading: React.FC = () => {
       // Transform grades to match component interface
       const transformedGrades: GradeDisplay[] = allGrades.map(grade => {
         const student = allStudents.find(s => s.id === grade.student_id);
+        const pct = Number(grade.grade) || 0;
         return {
           ...grade,
           studentName: student ? `${student.first_name} ${student.last_name}` : 'Unknown Student',
           assignment: grade.notes || 'Assignment',
-          grade: grade.grade >= 90 ? 'A' : grade.grade >= 80 ? 'B' : grade.grade >= 70 ? 'C' : 'D',
-          percentage: grade.grade,
+          grade: describePerformance(pct),
+          percentage: pct,
           date: grade.created_at.split('T')[0],
-          term: grade.academic_year,
+          term: quarterLabel(grade.semester) || grade.academic_year,
         };
       });
       
@@ -125,11 +151,19 @@ const Grading: React.FC = () => {
     return matchesSubject && matchesTerm;
   });
 
-  const getGradeColor = (grade: string) => {
-    if (grade.includes('A')) return 'success';
-    if (grade.includes('B')) return 'info';
-    if (grade.includes('C')) return 'warning';
-    return 'error';
+  const getGradeColor = (desc: string) => {
+    switch (desc) {
+      case 'Outstanding':
+        return 'success';
+      case 'Very Satisfactory':
+        return 'info';
+      case 'Satisfactory':
+        return 'primary';
+      case 'Fairly Satisfactory':
+        return 'warning';
+      default:
+        return 'error';
+    }
   };
 
   const handleAddGrade = () => {
@@ -137,10 +171,10 @@ const Grading: React.FC = () => {
     setFormStudentId('');
     setFormSubject(selectedSubject || '');
     setFormAssignment('');
-    setFormGrade('');
     setFormPercentage('');
     setFormDate(new Date().toISOString().slice(0, 10));
     setFormTerm(selectedTerm || '');
+    setFormQuarter('');
     setGradeDialogOpen(true);
   };
 
@@ -149,11 +183,28 @@ const Grading: React.FC = () => {
     setFormStudentId(grade.student_id);
     setFormSubject(grade.subject);
     setFormAssignment(grade.assignment);
-    setFormGrade(grade.grade);
     setFormPercentage(grade.percentage);
     setFormDate(grade.date);
+    // Attempt to reverse-map quarter label to Q1-Q4; fallback empty
+    const qMap: Record<string, 'Q1'|'Q2'|'Q3'|'Q4'> = {
+      '1st Quarter': 'Q1',
+      '2nd Quarter': 'Q2',
+      '3rd Quarter': 'Q3',
+      '4th Quarter': 'Q4',
+    };
     setFormTerm(grade.term);
+    setFormQuarter(qMap[grade.term] || '');
     setGradeDialogOpen(true);
+  };
+
+  const handlePercentageChange = (value: string) => {
+    if (value === '') {
+      setFormPercentage('');
+      return;
+    }
+    // Parse and clamp between 0 and 100
+    const num = Math.max(0, Math.min(100, Number(value)));
+    setFormPercentage(isNaN(num) ? '' : num);
   };
 
   const handleDeleteGrade = async (grade: GradeDisplay) => {
@@ -169,8 +220,8 @@ const Grading: React.FC = () => {
   };
 
   const handleSaveGrade = async () => {
-    if (!formStudentId || !formSubject || !formGrade || formPercentage === '') {
-      setError('Please fill Student, Subject, Grade, and Percentage.');
+    if (!formStudentId || !formSubject || formPercentage === '' || !formQuarter) {
+      setError('Please fill Student, Subject, Percentage, and Quarter.');
       return;
     }
     
@@ -182,7 +233,7 @@ const Grading: React.FC = () => {
           subject: formSubject,
           grade: Number(formPercentage),
           max_grade: 100,
-          semester: formTerm || selectedTerm || '',
+          semester: formQuarter,
           academic_year: '2024-2025',
           notes: formAssignment,
         };
@@ -194,7 +245,7 @@ const Grading: React.FC = () => {
           subject: formSubject,
           grade: Number(formPercentage),
           max_grade: 100,
-          semester: formTerm || selectedTerm || '',
+          semester: formQuarter,
           academic_year: '2024-2025',
           notes: formAssignment,
         };
@@ -254,22 +305,7 @@ const Grading: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={3}>
-              <FormControl fullWidth>
-                <InputLabel>Term</InputLabel>
-                <Select
-                  value={selectedTerm}
-                  onChange={(e) => setSelectedTerm(e.target.value)}
-                  label="Term"
-                >
-                  {terms.map(term => (
-                    <MenuItem key={term} value={term}>
-                      {term}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
+            {/* Term dropdown removed as requested */}
             <Grid item xs={12} sm={3}>
               <FormControl fullWidth>
                 <InputLabel>Grade Level</InputLabel>
@@ -330,20 +366,20 @@ const Grading: React.FC = () => {
           <Grid item xs={12} sm={6} md={3}>
             <Card>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h4" color="info.main">
-                  {filteredGrades.filter(g => g.grade.includes('A')).length}
+                <Typography variant="h4" color="success.main">
+                  {filteredGrades.filter(g => g.grade === 'Outstanding').length}
                 </Typography>
-                <Typography variant="body2">A Grades</Typography>
+                <Typography variant="body2">Outstanding</Typography>
               </CardContent>
             </Card>
           </Grid>
           <Grid item xs={12} sm={6} md={3}>
             <Card>
               <CardContent sx={{ textAlign: 'center' }}>
-                <Typography variant="h4" color="warning.main">
-                  {filteredGrades.filter(g => g.grade.includes('C') || g.grade.includes('D') || g.grade.includes('F')).length}
+                <Typography variant="h4" color="error.main">
+                  {filteredGrades.filter(g => g.grade === 'Did Not Meet Expectations').length}
                 </Typography>
-                <Typography variant="body2">Below B</Typography>
+                <Typography variant="body2">Did Not Meet Expectations</Typography>
               </CardContent>
             </Card>
           </Grid>
@@ -364,10 +400,10 @@ const Grading: React.FC = () => {
                   <TableCell>Student</TableCell>
                   <TableCell>Subject</TableCell>
                   <TableCell>Assignment</TableCell>
-                  <TableCell align="center">Grade</TableCell>
+                  <TableCell align="center">Descriptor</TableCell>
                   <TableCell align="center">Percentage</TableCell>
                   <TableCell>Date</TableCell>
-                  <TableCell>Term</TableCell>
+                  <TableCell>Quarter</TableCell>
                   <TableCell align="center">Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -380,13 +416,13 @@ const Grading: React.FC = () => {
                     <TableCell align="center">
                       <Chip
                         label={record.grade}
-                        color={getGradeColor(record.grade)}
+                        color={getGradeColor(record.grade) as any}
                         size="small"
                       />
                     </TableCell>
                     <TableCell align="center">{record.percentage}%</TableCell>
                     <TableCell>{new Date(record.date).toLocaleDateString()}</TableCell>
-                    <TableCell>{record.term}</TableCell>
+                    <TableCell>{quarterLabel((record as any).semester) || record.term}</TableCell>
                     <TableCell align="center">
                       <Tooltip title="Edit Grade">
                         <IconButton
@@ -453,12 +489,18 @@ const Grading: React.FC = () => {
               />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField
-                fullWidth
-                label="Grade (A, B+, B, etc.)"
-                value={formGrade}
-                onChange={(e) => setFormGrade(e.target.value)}
-              />
+              <FormControl fullWidth>
+                <InputLabel>Quarter</InputLabel>
+                <Select
+                  label="Quarter"
+                  value={formQuarter}
+                  onChange={(e) => setFormQuarter(e.target.value as any)}
+                >
+                  {quarters.map(q => (
+                    <MenuItem key={q.value} value={q.value}>{q.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
@@ -466,7 +508,17 @@ const Grading: React.FC = () => {
                 label="Percentage"
                 type="number"
                 value={formPercentage}
-                onChange={(e) => setFormPercentage(e.target.value === '' ? '' : Number(e.target.value))}
+                onChange={(e) => handlePercentageChange(e.target.value)}
+                inputProps={{ min: 0, max: 100 }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                fullWidth
+                label="Descriptor"
+                value={formPercentage !== '' ? describePerformance(Number(formPercentage)) : ''}
+                InputProps={{ readOnly: true }}
+                helperText={formPercentage !== '' ? `${Number(formPercentage)}% → ${describePerformance(Number(formPercentage))}` : ''}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -479,18 +531,7 @@ const Grading: React.FC = () => {
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <FormControl fullWidth>
-                <InputLabel>Term</InputLabel>
-                <Select label="Term" value={formTerm} onChange={(e) => setFormTerm(e.target.value)}>
-                  {terms.map(term => (
-                    <MenuItem key={term} value={term}>
-                      {term}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
+            {/* Term dropdown removed from Add/Edit dialog as requested */}
           </Grid>
         </DialogContent>
         <DialogActions>

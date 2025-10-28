@@ -4,6 +4,7 @@ import { supabaseClient } from '../lib/supabase';
 export interface Student {
   id: number;
   first_name: string;
+  lrn?: string | null;
   last_name: string;
   email: string;
   grade: string;
@@ -18,6 +19,7 @@ export interface Student {
 export interface StudentInsert {
   id?: number;
   first_name: string;
+  lrn?: string | null;
   last_name: string;
   email: string;
   grade: string;
@@ -32,6 +34,7 @@ export interface StudentInsert {
 export interface StudentUpdate {
   id?: number;
   first_name?: string;
+  lrn?: string | null;
   last_name?: string;
   email?: string;
   grade?: string;
@@ -48,6 +51,7 @@ export interface Staff {
   first_name: string;
   last_name: string;
   email: string;
+  user_id?: string; // optional link to users.id if stored in staff table
   role: string;
   department: string;
   phone?: string;
@@ -157,44 +161,6 @@ export interface GradeUpdate {
   updated_at?: string;
 }
 
-export interface Billing {
-  id: number;
-  student_id: number;
-  amount: number;
-  description: string;
-  due_date: string;
-  status: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-  payment_date?: string;
-  payment_method?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface BillingInsert {
-  id?: number;
-  student_id: number;
-  amount: number;
-  description: string;
-  due_date: string;
-  status?: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-  payment_date?: string;
-  payment_method?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface BillingUpdate {
-  id?: number;
-  student_id?: number;
-  amount?: number;
-  description?: string;
-  due_date?: string;
-  status?: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-  payment_date?: string;
-  payment_method?: string;
-  created_at?: string;
-  updated_at?: string;
-}
 
 export interface User {
   id: string;
@@ -223,6 +189,49 @@ export interface UserUpdate {
   name?: string;
   role?: 'Admin' | 'Teacher' | 'Staff';
   avatar_url?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+// Classes (Sections/Schedules)
+export interface ClassSchedule {
+  id: number;
+  name: string; // e.g., "Grade 5 - Section A"
+  subject: string; // e.g., "Mathematics"
+  teacher_id: string; // maps to users.id
+  room?: string;
+  day_of_week: number; // 0-6 (Sun-Sat)
+  start_time: string; // HH:MM format
+  end_time: string;   // HH:MM format
+  academic_year: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ClassScheduleInsert {
+  id?: number;
+  name: string;
+  subject: string;
+  teacher_id: string;
+  room?: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  academic_year: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ClassScheduleUpdate {
+  id?: number;
+  name?: string;
+  subject?: string;
+  teacher_id?: string;
+  room?: string;
+  day_of_week?: number;
+  start_time?: string;
+  end_time?: string;
+  academic_year?: string;
   created_at?: string;
   updated_at?: string;
 }
@@ -491,6 +500,12 @@ export const studentsService = {
 export const staffService = {
   async getAll(): Promise<Staff[]> {
     try {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.listStaff) {
+      const res = await anyWindow.electronAPI.admin.listStaff();
+      if (res?.ok) return res.data as Staff[];
+      console.warn('Admin listStaff failed:', res?.error);
+    }
     const { data, error } = await supabaseClient
       .from('staff')
       .select('*')
@@ -601,9 +616,13 @@ export const attendanceService = {
   },
 
   async bulkCreate(attendanceRecords: AttendanceInsert[]): Promise<Attendance[]> {
+    // Upsert to avoid duplicate key on (student_id, date)
+    // This will insert new records or update existing ones for the same student/date
+    const now = new Date().toISOString();
+    const payload = attendanceRecords.map(r => ({ ...r, updated_at: now }));
     const { data, error } = await supabaseClient
       .from('attendance')
-      .insert(attendanceRecords)
+      .upsert(payload, { onConflict: 'student_id,date' })
       .select();
     
     if (error) throw error;
@@ -681,99 +700,17 @@ export const gradesService = {
 };
 
 // Billing Service
-export const billingService = {
-  async getByStudent(studentId: number): Promise<Billing[]> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .select('*')
-      .eq('student_id', studentId)
-      .order('due_date', { ascending: false });
-    
-    if (error) throw error;
-    return data || [];
-  },
-
-  async getAll(): Promise<Billing[]> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .select(`
-        *,
-        students!inner(first_name, last_name, grade, section)
-      `)
-      .order('due_date', { ascending: false });
-    
-    if (error) throw error;
-    return data || [];
-  },
-
-  async getPending(): Promise<Billing[]> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .select(`
-        *,
-        students!inner(first_name, last_name, grade, section)
-      `)
-      .in('status', ['Pending', 'Overdue'])
-      .order('due_date', { ascending: true });
-    
-    if (error) throw error;
-    return data || [];
-  },
-
-  async create(billing: BillingInsert): Promise<Billing> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .insert(billing)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  async update(id: number, updates: BillingUpdate): Promise<Billing> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  async markAsPaid(id: number, paymentMethod: string): Promise<Billing> {
-    const { data, error } = await supabaseClient
-      .from('billing')
-      .update({ 
-        status: 'Paid',
-        payment_date: new Date().toISOString(),
-        payment_method: paymentMethod,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) throw error;
-    return data;
-  },
-
-  async delete(id: number): Promise<void> {
-    const { error } = await supabaseClient
-      .from('billing')
-      .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-  }
-};
 
 // Users Service
 export const usersService = {
   async getAll(): Promise<User[]> {
     try {
+      const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+      if (anyWindow?.electronAPI?.admin?.listUsers) {
+        const res = await anyWindow.electronAPI.admin.listUsers();
+        if (res?.ok) return res.data as User[];
+        console.warn('Admin listUsers failed:', res?.error);
+      }
       const { data, error } = await supabaseClient
         .from('users')
         .select('*')
@@ -901,4 +838,308 @@ export const settingsService = {
     
     return settings;
   }
+};
+
+// --- Classes Service ---
+const getFallbackClasses = (teacherId?: string, year: string = '2024-2025'): ClassSchedule[] => {
+  const today = new Date();
+  const dow = today.getDay();
+  const base: ClassSchedule[] = [
+    {
+      id: 1,
+      name: 'Grade 5 - Class 1',
+      subject: 'Mathematics',
+      teacher_id: teacherId || '2',
+      room: 'Room 201',
+      day_of_week: dow,
+      start_time: '09:00',
+      end_time: '10:00',
+      academic_year: year,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    {
+      id: 2,
+      name: 'Grade 5 - Class 1',
+      subject: 'Science',
+      teacher_id: teacherId || '2',
+      room: 'Lab 1',
+      day_of_week: dow,
+      start_time: '10:15',
+      end_time: '11:00',
+      academic_year: year,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ];
+  return base;
+};
+
+// --- Grade Sections Service ---
+export interface GradeSectionRow {
+  id: number;
+  grade: number;
+  section_name: string;
+  academic_year: string;
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GradeSectionInsert {
+  grade: number;
+  section_name: string;
+  academic_year: string;
+  notes?: string | null;
+}
+
+export const gradeSectionsService = {
+  async list(academicYear: string): Promise<GradeSectionRow[]> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.listGradeSections) {
+      const res = await anyWindow.electronAPI.admin.listGradeSections(academicYear);
+      if (res?.ok) return res.data as GradeSectionRow[];
+      console.warn('Admin listGradeSections failed:', res?.error);
+    }
+    const { data, error } = await supabaseClient
+      .from('grade_sections')
+      .select('*')
+      .eq('academic_year', academicYear)
+      .order('grade', { ascending: true });
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('grade_sections')) {
+        throw new Error('Database is missing table public.grade_sections. Open Supabase SQL editor and run database/create-grade-sections-table.sql (and database/rls_policies_all.sql). For legacy readers of public.sections, also run database/compat-sections-view.sql.');
+      }
+      throw error;
+    }
+    return data || [];
+  },
+  async add(section: GradeSectionInsert): Promise<GradeSectionRow> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.addGradeSection) {
+      const res = await anyWindow.electronAPI.admin.addGradeSection(section);
+      if (res?.ok) return res.data as GradeSectionRow;
+      console.warn('Admin addGradeSection failed:', res?.error);
+    }
+    const { data, error } = await supabaseClient
+      .from('grade_sections')
+      .insert(section)
+      .select()
+      .single();
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('grade_sections')) {
+        throw new Error('Cannot add section: table public.grade_sections does not exist. Run database/create-grade-sections-table.sql then reload the app.');
+      }
+      if (msg.includes('unique') || msg.includes('duplicate key')) {
+        throw new Error('A section with the same name already exists for this grade and year.');
+      }
+      throw error;
+    }
+    return data as GradeSectionRow;
+  },
+  async removeByComposite(grade: number, sectionName: string, academicYear: string): Promise<void> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.removeGradeSectionByComposite) {
+      const res = await anyWindow.electronAPI.admin.removeGradeSectionByComposite(grade, sectionName, academicYear);
+      if (res?.ok) return;
+      console.warn('Admin removeGradeSectionByComposite failed:', res?.error);
+    }
+    const { error } = await supabaseClient
+      .from('grade_sections')
+      .delete()
+      .eq('grade', grade)
+      .eq('section_name', sectionName)
+      .eq('academic_year', academicYear);
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('grade_sections')) {
+        throw new Error('Cannot remove: table public.grade_sections does not exist. Apply migrations then retry.');
+      }
+      throw error;
+    }
+  },
+};
+
+// --- Section Subjects Service ---
+export interface SectionSubjectRow {
+  id: number;
+  section_id: number;
+  subject: string;
+  teacher_id?: string | null; // users.id (UUID)
+  staff_id?: number | null; // staff.id
+  schedule?: any | null; // JSON structure { days:number[], start:string, end:string, room?:string }
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SectionSubjectInsert {
+  section_id: number;
+  subject: string;
+  teacher_id?: string | null;
+  staff_id?: number | null;
+  schedule?: any | null;
+  notes?: string | null;
+}
+
+export interface SectionSubjectUpdate {
+  subject?: string;
+  teacher_id?: string | null;
+  staff_id?: number | null;
+  schedule?: any | null;
+  notes?: string | null;
+}
+
+export const sectionSubjectsService = {
+  async listBySection(sectionId: number): Promise<SectionSubjectRow[]> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.listSectionSubjects) {
+      const res = await anyWindow.electronAPI.admin.listSectionSubjects(sectionId);
+      if (res?.ok) return res.data as SectionSubjectRow[];
+      console.warn('Admin listSectionSubjects failed:', res?.error);
+    }
+    const { data, error } = await supabaseClient
+      .from('section_subjects')
+      .select('*')
+      .eq('section_id', sectionId)
+      .order('subject', { ascending: true });
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('section_subjects')) {
+        throw new Error('Database is missing table public.section_subjects. Open Supabase SQL editor and run database/create-section-subjects-table.sql (and database/rls_policies_all.sql), then reload.');
+      }
+      throw error;
+    }
+    return data || [];
+  },
+  async create(row: SectionSubjectInsert): Promise<SectionSubjectRow> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.createSectionSubject) {
+      const res = await anyWindow.electronAPI.admin.createSectionSubject(row);
+      if (res?.ok) return res.data as SectionSubjectRow;
+      console.warn('Admin createSectionSubject failed:', res?.error);
+    }
+    const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(v);
+    const sanitize = (p: any) => {
+      const out: any = { ...p };
+      if ('teacher_id' in out && !isUuid(out.teacher_id)) delete out.teacher_id;
+      if ('staff_id' in out) {
+        if (out.staff_id === '' || out.staff_id == null) out.staff_id = null;
+        else out.staff_id = Number(out.staff_id);
+        if (!Number.isFinite(out.staff_id)) out.staff_id = null;
+      }
+      return out;
+    };
+    let { data, error } = await supabaseClient
+      .from('section_subjects')
+      .insert(sanitize(row))
+      .select()
+      .single();
+    if (error && String(error.message || '').includes("staff_id")) {
+      // Fallback: server schema not yet updated. Retry without staff_id
+      const { staff_id, ...rest } = row as any;
+      const retry = await supabaseClient
+        .from('section_subjects')
+        .insert(sanitize(rest))
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      return retry.data as SectionSubjectRow;
+    }
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('section_subjects')) {
+        throw new Error('Cannot add subject: table public.section_subjects does not exist. Run database/create-section-subjects-table.sql then reload the app.');
+      }
+      if (msg.includes('duplicate key') || msg.includes('unique')) {
+        throw new Error('This subject is already assigned to the selected section.');
+      }
+      throw error;
+    }
+    return data as SectionSubjectRow;
+  },
+  async update(id: number, updates: SectionSubjectUpdate): Promise<SectionSubjectRow> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.updateSectionSubject) {
+      const res = await anyWindow.electronAPI.admin.updateSectionSubject(id, updates);
+      if (res?.ok) return res.data as SectionSubjectRow;
+      console.warn('Admin updateSectionSubject failed:', res?.error);
+    }
+    const isUuid = (v: any) => typeof v === 'string' && /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/.test(v);
+    const sanitize = (p: any) => {
+      const out: any = { ...p };
+      if ('teacher_id' in out && !isUuid(out.teacher_id)) delete out.teacher_id;
+      if ('staff_id' in out) {
+        if (out.staff_id === '' || out.staff_id == null) out.staff_id = null;
+        else out.staff_id = Number(out.staff_id);
+        if (!Number.isFinite(out.staff_id)) out.staff_id = null;
+      }
+      return out;
+    };
+    let { data, error } = await supabaseClient
+      .from('section_subjects')
+      .update({ ...sanitize(updates), updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+    if (error && String(error.message || '').includes("staff_id")) {
+      // Fallback: remove staff_id from payload if column doesn't exist yet
+      const { staff_id, ...rest } = updates as any;
+      const retry = await supabaseClient
+        .from('section_subjects')
+        .update({ ...sanitize(rest), updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+      if (retry.error) throw retry.error;
+      return retry.data as SectionSubjectRow;
+    }
+    if (error) {
+      const msg = String(error.message || error.toString());
+      if (msg.includes('relation') && msg.includes('section_subjects')) {
+        throw new Error('Cannot save: table public.section_subjects does not exist. Apply migrations then retry.');
+      }
+      throw error;
+    }
+    return data as SectionSubjectRow;
+  },
+  async remove(id: number): Promise<void> {
+    const anyWindow = typeof window !== 'undefined' ? (window as any) : undefined;
+    if (anyWindow?.electronAPI?.admin?.deleteSectionSubject) {
+      const res = await anyWindow.electronAPI.admin.deleteSectionSubject(id);
+      if (res?.ok) return;
+      console.warn('Admin deleteSectionSubject failed:', res?.error);
+    }
+    const { error } = await supabaseClient
+      .from('section_subjects')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+};
+
+export const classesService = {
+  async getTodayForTeacher(teacherId: string, academicYear: string): Promise<ClassSchedule[]> {
+    try {
+      const today = new Date();
+      const dow = today.getDay();
+      const { data, error } = await supabaseClient
+        .from('classes')
+        .select('*')
+        .eq('teacher_id', teacherId)
+        .eq('academic_year', academicYear)
+        .eq('day_of_week', dow)
+        .order('start_time', { ascending: true });
+      if (error) {
+        console.warn('Classes table not available, using fallback:', error.message);
+        return getFallbackClasses(teacherId, academicYear);
+      }
+      return data || [];
+    } catch (e) {
+      console.warn('Classes fetch failed, using fallback:', e);
+      return getFallbackClasses(teacherId, academicYear);
+    }
+  },
 };

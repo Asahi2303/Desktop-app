@@ -163,44 +163,6 @@ export interface Database {
           updated_at?: string;
         };
       };
-      billing: {
-        Row: {
-          id: number;
-          student_id: number;
-          amount: number;
-          description: string;
-          due_date: string;
-          status: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-          payment_date?: string;
-          payment_method?: string;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: number;
-          student_id: number;
-          amount: number;
-          description: string;
-          due_date: string;
-          status?: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-          payment_date?: string;
-          payment_method?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: number;
-          student_id?: number;
-          amount?: number;
-          description?: string;
-          due_date?: string;
-          status?: 'Pending' | 'Paid' | 'Overdue' | 'Cancelled';
-          payment_date?: string;
-          payment_method?: string;
-          created_at?: string;
-          updated_at?: string;
-        };
-      };
       app_settings: {
         Row: {
           id: number;
