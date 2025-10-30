@@ -126,17 +126,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </Button>
             </Box>
 
-            <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                Demo Credentials:
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Admin: admin@jollychildren.edu / admin123
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                Teacher: teacher@jollychildren.edu / teacher123
-              </Typography>
-            </Box>
+            {/* Demo credentials removed for production */}
           </CardContent>
         </Card>
       </Container>
