@@ -253,12 +253,13 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
               <Typography variant="h4" gutterBottom>
                 {student.firstName} {student.lastName}
               </Typography>
-              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
+                <Chip label={`LRN: ${student.lrn || '-'}`} variant="outlined" />
                 <Chip label={`Grade ${student.grade || '-'}`} color="primary" />
                 <Chip label={`Section ${student.section || '-'}`} color="secondary" />
-                <Chip 
-                  label={student.status} 
-                  color={student.status === 'Active' ? 'success' : 'warning'} 
+                <Chip
+                  label={student.status}
+                  color={student.status === 'Active' ? 'success' : 'warning'}
                 />
               </Box>
               <Grid container spacing={2}>
@@ -299,6 +300,12 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
               <List>
                 <ListItem>
                   <ListItemText
+                    primary="LRN"
+                    secondary={student.lrn || '—'}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
                     primary="Grade"
                     secondary={`Grade ${student.grade || '-'}`}
                   />
@@ -313,6 +320,18 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
                   <ListItemText
                     primary="Status"
                     secondary={student.status}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Email"
+                    secondary={student.email || '—'}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Enrollment Date"
+                    secondary={new Date(student.enrollmentDate).toLocaleDateString()}
                   />
                 </ListItem>
               </List>
