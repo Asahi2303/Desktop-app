@@ -4,8 +4,11 @@ import { supabaseClient } from '../lib/supabase';
 export interface Student {
   id: number;
   first_name: string;
+  suffix?: string | null;
   lrn?: string | null;
   last_name: string;
+  full_name?: string | null;
+  normalized_full_name?: string | null;
   email: string;
   grade: string;
   section: string;
@@ -19,8 +22,11 @@ export interface Student {
 export interface StudentInsert {
   id?: number;
   first_name: string;
+  suffix?: string | null;
   lrn?: string | null;
   last_name: string;
+  full_name?: string | null;
+  normalized_full_name?: string | null;
   email: string;
   grade: string;
   section: string;
@@ -34,8 +40,11 @@ export interface StudentInsert {
 export interface StudentUpdate {
   id?: number;
   first_name?: string;
+  suffix?: string | null;
   lrn?: string | null;
   last_name?: string;
+  full_name?: string | null;
+  normalized_full_name?: string | null;
   email?: string;
   grade?: string;
   section?: string;
@@ -453,26 +462,40 @@ export const studentsService = {
   },
 
   async create(student: StudentInsert): Promise<Student> {
-    const { data, error } = await supabaseClient
+    // Try inserting with all fields; if schema doesn't support a field like `suffix`, retry without it
+    const attempt = async (payload: any) => supabaseClient
       .from('students')
-      .insert(student)
+      .insert(payload)
       .select()
       .single();
-    
+    let { data, error } = await attempt(student);
+    if (error && /(suffix|full_name|normalized_full_name)/i.test(String(error.message || ''))) {
+      const { suffix, full_name, normalized_full_name, ...rest } = student as any;
+      const retry = await attempt(rest);
+      if (retry.error) throw retry.error;
+      return retry.data as Student;
+    }
     if (error) throw error;
-    return data;
+    return data as Student;
   },
 
   async update(id: number, updates: StudentUpdate): Promise<Student> {
-    const { data, error } = await supabaseClient
+    const payload: any = { ...updates, updated_at: new Date().toISOString() };
+    const attempt = async (p: any) => supabaseClient
       .from('students')
-      .update({ ...updates, updated_at: new Date().toISOString() })
+      .update(p)
       .eq('id', id)
       .select()
       .single();
-    
+    let { data, error } = await attempt(payload);
+    if (error && /(suffix|full_name|normalized_full_name)/i.test(String(error.message || ''))) {
+      const { suffix, full_name, normalized_full_name, ...rest } = payload;
+      const retry = await attempt(rest);
+      if (retry.error) throw retry.error;
+      return retry.data as Student;
+    }
     if (error) throw error;
-    return data;
+    return data as Student;
   },
 
   async delete(id: number): Promise<void> {

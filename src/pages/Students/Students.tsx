@@ -14,6 +14,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Divider,
   FormControl,
   InputLabel,
   Select,
@@ -57,6 +58,13 @@ const Students: React.FC<StudentsProps> = ({ currentUser }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const isAdmin = useMemo(() => currentUser?.role === 'Admin', [currentUser]);
 
+  // More Filters state
+  const [moreFiltersOpen, setMoreFiltersOpen] = useState(false);
+  const [filterGrade, setFilterGrade] = useState<string>('');
+  const [filterSection, setFilterSection] = useState<string>('');
+  const [filterFromDate, setFilterFromDate] = useState<string>('');
+  const [filterToDate, setFilterToDate] = useState<string>('');
+
 
   // Load students from Supabase
   const loadStudents = async () => {
@@ -87,11 +95,17 @@ const Students: React.FC<StudentsProps> = ({ currentUser }) => {
     const matchesSearch = 
       student.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       student.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.email.toLowerCase().includes(searchTerm.toLowerCase());
+      student.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (student.lrn ? student.lrn.toLowerCase().includes(searchTerm.toLowerCase()) : false);
     
     const matchesFilter = filterStatus === 'All' || student.status === filterStatus;
+    const matchesGrade = !filterGrade || student.grade === filterGrade;
+    const matchesSection = !filterSection || student.section === filterSection;
+    const d = new Date(student.enrollmentDate);
+    const matchesFrom = !filterFromDate || d >= new Date(filterFromDate);
+    const matchesTo = !filterToDate || d <= new Date(filterToDate);
     
-    return matchesSearch && matchesFilter;
+    return matchesSearch && matchesFilter && matchesGrade && matchesSection && matchesFrom && matchesTo;
   });
 
   const getStatusColor = (status: string) => {
@@ -144,7 +158,7 @@ const Students: React.FC<StudentsProps> = ({ currentUser }) => {
       renderCell: (params) => (
         <Box>
           <Typography variant="body2" fontWeight="bold">
-            {params.row.firstName} {params.row.lastName}
+            {params.row.firstName} {params.row.lastName}{params.row.suffix ? ` ${params.row.suffix}` : ''}
           </Typography>
           <Typography variant="caption" color="text.secondary">
             {params.row.email}
@@ -283,6 +297,7 @@ const Students: React.FC<StudentsProps> = ({ currentUser }) => {
             <Button
               variant="outlined"
               startIcon={<FilterList />}
+              onClick={() => setMoreFiltersOpen(true)}
             >
               More Filters
             </Button>
@@ -323,6 +338,99 @@ const Students: React.FC<StudentsProps> = ({ currentUser }) => {
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
           <Button onClick={confirmDelete} color="error" variant="contained">
             Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* More Filters Dialog */}
+      <Dialog open={moreFiltersOpen} onClose={() => setMoreFiltersOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>More Filters</DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 1 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Grade</InputLabel>
+                  <Select
+                    label="Grade"
+                    value={filterGrade}
+                    onChange={(e) => {
+                      setFilterGrade(e.target.value);
+                      // Reset section if grade changes
+                      setFilterSection('');
+                    }}
+                  >
+                    <SelectMenuItem value="">Any</SelectMenuItem>
+                    {Array.from({ length: 10 }).map((_, idx) => {
+                      const g = String(idx + 1);
+                      return (
+                        <SelectMenuItem key={g} value={g}>Grade {g}</SelectMenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <FormControl fullWidth disabled={!filterGrade}>
+                  <InputLabel>Section</InputLabel>
+                  <Select
+                    label="Section"
+                    value={filterSection}
+                    onChange={(e) => setFilterSection(e.target.value)}
+                  >
+                    <SelectMenuItem value="">Any</SelectMenuItem>
+                    {(() => {
+                      const configured = getSectionsForGrade(filterGrade);
+                      const dynamicSections = students
+                        .filter(s => !filterGrade || s.grade === filterGrade)
+                        .map(s => s.section);
+                      const unique = Array.from(new Set([...(configured || []), ...dynamicSections]));
+                      return unique.map(sec => (
+                        <SelectMenuItem key={sec} value={sec}>{sec}</SelectMenuItem>
+                      ));
+                    })()}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12}>
+                <Divider />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Enrollment From"
+                  type="date"
+                  InputLabelProps={{ shrink: true }}
+                  value={filterFromDate}
+                  onChange={(e) => setFilterFromDate(e.target.value)}
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
+                  label="Enrollment To"
+                  type="date"
+                  InputLabelProps={{ shrink: true }}
+                  value={filterToDate}
+                  onChange={(e) => setFilterToDate(e.target.value)}
+                />
+              </Grid>
+            </Grid>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => {
+              setFilterGrade('');
+              setFilterSection('');
+              setFilterFromDate('');
+              setFilterToDate('');
+            }}
+          >
+            Clear
+          </Button>
+          <Button variant="contained" onClick={() => setMoreFiltersOpen(false)}>
+            Apply
           </Button>
         </DialogActions>
       </Dialog>

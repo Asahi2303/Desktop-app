@@ -39,6 +39,8 @@ import {
   Delete,
 } from '@mui/icons-material';
 import { studentsService, gradesService, Grade as GradeRecord, GradeInsert, GradeUpdate } from '../../services/database';
+// Use ESM-friendly imports for jsPDF + autotable
+// We'll also dynamically import inside the print function to avoid plugin attach issues.
 
 // Transform the database grade to match component interface
 interface GradeDisplay extends Omit<GradeRecord, 'grade'> {
@@ -48,6 +50,7 @@ interface GradeDisplay extends Omit<GradeRecord, 'grade'> {
   percentage: number; // Numeric grade
   date: string;
   term: string;
+  studentGrade?: string; // Student's grade level for filtering
 }
 
 const Grading: React.FC = () => {
@@ -57,9 +60,15 @@ const Grading: React.FC = () => {
   const [gradeDialogOpen, setGradeDialogOpen] = useState(false);
   const [editingGrade, setEditingGrade] = useState<GradeDisplay | null>(null);
   const [records, setRecords] = useState<GradeDisplay[]>([]);
-  const [students, setStudents] = useState<{ id: number; firstName: string; lastName: string }[]>([]);
+  const [students, setStudents] = useState<{ id: number; firstName: string; lastName: string; lrn?: string | null; grade?: string; section?: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  // Print dialog state
+  const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [printStudentId, setPrintStudentId] = useState<number | ''>('');
+  const [printing, setPrinting] = useState(false);
 
   // Controlled form state for dialog
   const [formStudentId, setFormStudentId] = useState<number | ''>('');
@@ -121,6 +130,7 @@ const Grading: React.FC = () => {
           percentage: pct,
           date: grade.created_at.split('T')[0],
           term: quarterLabel(grade.semester) || grade.academic_year,
+          studentGrade: student?.grade || undefined,
         };
       });
       
@@ -130,7 +140,10 @@ const Grading: React.FC = () => {
       setStudents(allStudents.map(s => ({ 
         id: s.id, 
         firstName: s.first_name, 
-        lastName: s.last_name 
+        lastName: s.last_name,
+        lrn: s.lrn ?? null,
+        grade: s.grade,
+        section: s.section,
       })));
       
     } catch (error: any) {
@@ -148,7 +161,8 @@ const Grading: React.FC = () => {
   const filteredGrades = records.filter(record => {
     const matchesSubject = !selectedSubject || record.subject === selectedSubject;
     const matchesTerm = !selectedTerm || record.term === selectedTerm;
-    return matchesSubject && matchesTerm;
+    const matchesGradeLevel = !selectedGrade || (record.studentGrade === selectedGrade);
+    return matchesSubject && matchesTerm && matchesGradeLevel;
   });
 
   const getGradeColor = (desc: string) => {
@@ -163,6 +177,107 @@ const Grading: React.FC = () => {
         return 'warning';
       default:
         return 'error';
+    }
+  };
+
+  // Generate PDF for selected student
+  const handleOpenPrint = () => {
+    setPrintStudentId('');
+    setPrintDialogOpen(true);
+  };
+
+  const handlePrintGrades = async () => {
+    if (!printStudentId) return;
+    try {
+      setPrinting(true);
+      const student = students.find(s => s.id === printStudentId);
+      if (!student) {
+        setError('Selected student not found.');
+        return;
+      }
+      const all = await gradesService.getByStudent(printStudentId as number);
+      if (!all || all.length === 0) {
+        setInfo('No grades found for the selected student.');
+        return;
+      }
+      // Group by subject
+      const bySubject = all.reduce<Record<string, GradeRecord[]>>((acc, g) => {
+        const key = g.subject || 'Unknown';
+        acc[key] = acc[key] || [];
+        acc[key].push(g);
+        return acc;
+      }, {});
+      // Dynamic import to ensure plugin attaches correctly in CRA/Electron hybrid
+      const { jsPDF } = await import('jspdf');
+      const autoTable = (await import('jspdf-autotable')).default;
+      const doc = new jsPDF({ unit: 'pt', format: 'letter' });
+      const marginX = 48; // 0.67in
+      let cursorY = 72; // 1in top
+
+      // Header
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(18);
+      doc.text('Student Grade Report', marginX, cursorY);
+      cursorY += 20;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(11);
+      const fullNameLine = `${student.firstName} ${student.lastName}${student.lrn ? `  •  LRN: ${student.lrn}` : ''}`;
+      const classLine = `Grade ${student.grade ?? '-'}  •  Section ${student.section ?? '-'}`;
+      doc.text(fullNameLine, marginX, cursorY);
+      cursorY += 16;
+      doc.text(classLine, marginX, cursorY);
+      cursorY += 24;
+
+      // For each subject, render a titled table
+      const subjects = Object.keys(bySubject).sort();
+      for (let i = 0; i < subjects.length; i++) {
+        const subject = subjects[i];
+        const rows = bySubject[subject]
+          .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+          .map(g => [
+            subject,
+            g.notes || '—',
+            quarterLabel(g.semester) || g.academic_year || '—',
+            `${Number(g.grade) || 0}%`,
+            describePerformance(Number(g.grade) || 0),
+            new Date(g.created_at).toLocaleDateString(),
+          ]);
+
+        // Subject title
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(13);
+        doc.text(subject, marginX, cursorY);
+        cursorY += 8;
+
+        autoTable(doc, {
+          startY: cursorY + 8,
+          margin: { left: marginX, right: marginX },
+          head: [['Subject', 'Assignment', 'Quarter', 'Percentage', 'Descriptor', 'Date']],
+          body: rows,
+          styles: { font: 'helvetica', fontSize: 10, cellPadding: 6 },
+          headStyles: { fillColor: [33, 150, 243], textColor: 255, halign: 'left' },
+          alternateRowStyles: { fillColor: [245, 247, 250] },
+          theme: 'grid',
+        });
+        // Get the final Y from last table
+        const lastY = (doc as any).lastAutoTable?.finalY || cursorY + 100;
+        cursorY = lastY + 24;
+
+        // Page break if close to bottom
+        if (cursorY > doc.internal.pageSize.getHeight() - 96 && i < subjects.length - 1) {
+          doc.addPage();
+          cursorY = 72;
+        }
+      }
+
+      const fileName = `Grades_${student.firstName}_${student.lastName}.pdf`;
+      doc.save(fileName);
+      setPrintDialogOpen(false);
+    } catch (e: any) {
+      console.error('Print error:', e);
+      setError(e?.message || 'Failed to generate PDF');
+    } finally {
+      setPrinting(false);
     }
   };
 
@@ -268,7 +383,8 @@ const Grading: React.FC = () => {
           <Button
             variant="outlined"
             startIcon={<Print />}
-            disabled={!selectedSubject || !selectedTerm}
+            onClick={handleOpenPrint}
+            disabled={students.length === 0}
           >
             Print Grades
           </Button>
@@ -546,6 +662,42 @@ const Grading: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Print Grades Dialog */}
+      <Dialog open={printDialogOpen} onClose={() => setPrintDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Select Student to Print</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={12}>
+              <FormControl fullWidth>
+                <InputLabel>Student</InputLabel>
+                <Select
+                  label="Student"
+                  value={printStudentId}
+                  onChange={(e) => setPrintStudentId(Number(e.target.value))}
+                >
+                  {students.map(s => (
+                    <MenuItem key={s.id} value={s.id}>
+                      {s.firstName} {s.lastName}{s.lrn ? ` — LRN: ${s.lrn}` : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPrintDialogOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            startIcon={<Print />}
+            onClick={handlePrintGrades}
+            disabled={!printStudentId || printing}
+          >
+            {printing ? 'Generating...' : 'Generate PDF'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Error Notification */}
       <Snackbar
         open={!!error}
@@ -554,6 +706,15 @@ const Grading: React.FC = () => {
       >
         <Alert onClose={() => setError(null)} severity="error">
           {error}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={!!info}
+        autoHideDuration={5000}
+        onClose={() => setInfo(null)}
+      >
+        <Alert onClose={() => setInfo(null)} severity="info">
+          {info}
         </Alert>
       </Snackbar>
     </Box>

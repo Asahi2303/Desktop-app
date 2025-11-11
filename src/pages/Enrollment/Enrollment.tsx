@@ -32,6 +32,7 @@ const Enrollment: React.FC = () => {
   const [formData, setFormData] = useState({
     // Student Information
     firstName: '',
+    suffix: '',
     lastName: '',
     email: '',
     phone: '',
@@ -105,6 +106,7 @@ const Enrollment: React.FC = () => {
       case 0:
         if (!formData.firstName) newErrors.firstName = 'First name is required';
         if (!formData.lastName) newErrors.lastName = 'Last name is required';
+        // suffix optional
         if (!formData.email) newErrors.email = 'Email is required';
         if (!formData.phone) newErrors.phone = 'Phone is required';
         if (!formData.dateOfBirth) newErrors.dateOfBirth = 'Date of birth is required';
@@ -143,9 +145,15 @@ const Enrollment: React.FC = () => {
         setLoading(true);
         setError(null);
         
+  // Do NOT include suffix in full_name/normalized_full_name
+  const fullName = `${formData.firstName} ${formData.lastName}`.trim();
+  const normalized = fullName.toLowerCase();
         const newStudent: StudentInsert = {
           first_name: formData.firstName,
+          suffix: formData.suffix || undefined,
           last_name: formData.lastName,
+          full_name: fullName,
+          normalized_full_name: normalized,
           email: formData.email,
           lrn: formData.lrn || undefined,
           grade: formData.grade,
@@ -201,6 +209,24 @@ const Enrollment: React.FC = () => {
                 helperText={errors.lastName}
                 required
               />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth>
+                <InputLabel>Suffix</InputLabel>
+                <Select
+                  value={formData.suffix}
+                  label="Suffix"
+                  onChange={(e) => handleInputChange('suffix', e.target.value)}
+                >
+                  <MenuItem value="">None</MenuItem>
+                  <MenuItem value="Jr.">Jr.</MenuItem>
+                  <MenuItem value="Sr.">Sr.</MenuItem>
+                  <MenuItem value="II">II</MenuItem>
+                  <MenuItem value="III">III</MenuItem>
+                  <MenuItem value="IV">IV</MenuItem>
+                  <MenuItem value="V">V</MenuItem>
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField

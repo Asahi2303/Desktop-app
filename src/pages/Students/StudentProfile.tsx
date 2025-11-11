@@ -251,7 +251,7 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
             </Grid>
             <Grid item xs>
               <Typography variant="h4" gutterBottom>
-                {student.firstName} {student.lastName}
+                {student.firstName} {student.lastName}{student.suffix ? ` ${student.suffix}` : ''}
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, mb: 2 }}>
                 <Chip label={`LRN: ${student.lrn || '-'}`} variant="outlined" />
@@ -302,6 +302,12 @@ const StudentProfile: React.FC<StudentProfileProps> = ({ currentUser }) => {
                   <ListItemText
                     primary="LRN"
                     secondary={student.lrn || '—'}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Suffix"
+                    secondary={student.suffix || '—'}
                   />
                 </ListItem>
                 <ListItem>
