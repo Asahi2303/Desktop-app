@@ -27,21 +27,48 @@ serve(async (req: Request): Promise<Response> => {
     const finalRole = ALLOWED_ROLES.has(String(role)) ? String(role) : 'Staff';
     const finalName = (name && String(name).trim()) || String(email).split('@')[0];
 
-    // Create client using service role provided automatically in edge runtime
-  // Environment variables provided automatically by Supabase Edge Functions runtime
-  // @ts-ignore Deno global available in edge runtime
-  const SUPABASE_URL = (globalThis as any).Deno?.env.get('SUPABASE_URL');
-  // @ts-ignore Deno global available in edge runtime
-  const SUPABASE_SERVICE_ROLE_KEY = (globalThis as any).Deno?.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // Environment variables provided automatically by Supabase Edge Functions runtime
+    // @ts-ignore Deno global available in edge runtime
+    const SUPABASE_URL = (globalThis as any).Deno?.env.get('SUPABASE_URL');
+    // @ts-ignore Deno global available in edge runtime
+    const SUPABASE_SERVICE_ROLE_KEY = (globalThis as any).Deno?.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // @ts-ignore Deno global available in edge runtime
+    const SUPABASE_ANON_KEY = (globalThis as any).Deno?.env.get('SUPABASE_ANON_KEY');
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return new Response(JSON.stringify({ ok: false, error: 'Missing service role configuration' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
     }
 
-  // Dynamic import supabase-js; version pinned for stability
-  const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.39.6');
+    // Dynamic import supabase-js; version pinned for stability
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2.39.6');
+
+    // Require authenticated caller (Authorization header forwarded by functions.invoke)
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ ok: false, error: 'Not authenticated' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    // Validate caller session via anon client
+    const keyForUserClient = SUPABASE_ANON_KEY || SUPABASE_SERVICE_ROLE_KEY;
+    const userClient = createClient(SUPABASE_URL, keyForUserClient, {
+      global: { headers: { Authorization: authHeader } },
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data: userData, error: userErr } = await userClient.auth.getUser();
+    if (userErr || !userData?.user?.id) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid user session' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Create service-role client for privileged operations
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 
-    // Try to create user
+    // Check caller's role (service role bypasses RLS safely)
+    const callerId = userData.user.id;
+    const { data: callerProfile } = await supabaseAdmin.from('users').select('role').eq('id', callerId).single();
+    const callerRole = callerProfile?.role || userData.user.user_metadata?.role || 'Staff';
+    if (callerRole !== 'Admin') {
+      return new Response(JSON.stringify({ ok: false, error: 'Forbidden: Admins only' }), { status: 403, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Try to create or update user directly (no recovery email sent)
     const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
