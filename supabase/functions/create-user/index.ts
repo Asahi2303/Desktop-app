@@ -8,20 +8,30 @@
 // Supabase provides the Deno runtime; we import serve from std.
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
+// CORS headers for browser access
+const corsHeaders: Record<string, string> = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
 // Allowed roles to prevent arbitrary metadata injection
 const ALLOWED_ROLES = new Set(['Admin','Teacher','Staff']);
 
 serve(async (req: Request): Promise<Response> => {
   try {
+    // Preflight support
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders });
+    }
     if (req.method !== 'POST') {
-      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ ok: false, error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const body = await req.json().catch(() => ({}));
     const { email, password, name, role } = body || {};
 
     if (!email || !password) {
-      return new Response(JSON.stringify({ ok: false, error: 'Email and password are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ ok: false, error: 'Email and password are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const finalRole = ALLOWED_ROLES.has(String(role)) ? String(role) : 'Staff';
@@ -35,7 +45,7 @@ serve(async (req: Request): Promise<Response> => {
     // @ts-ignore Deno global available in edge runtime
     const SUPABASE_ANON_KEY = (globalThis as any).Deno?.env.get('SUPABASE_ANON_KEY');
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return new Response(JSON.stringify({ ok: false, error: 'Missing service role configuration' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ ok: false, error: 'Missing service role configuration' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Dynamic import supabase-js; version pinned for stability
@@ -78,16 +88,16 @@ serve(async (req: Request): Promise<Response> => {
       let page = 1; const perPage = 1000; let found: any = null;
       while (page < 20) {
         const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-        if (listErr) return new Response(JSON.stringify({ ok: false, error: listErr.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  if (listErr) return new Response(JSON.stringify({ ok: false, error: listErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         found = listData?.users?.find((u: any) => (u.email || '').toLowerCase() === String(email).toLowerCase());
         if (found) break;
         if ((listData?.users?.length || 0) < perPage) break;
         page++;
       }
-      if (!found) return new Response(JSON.stringify({ ok: false, error: createError.message || 'User create failed and existing user not found' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  if (!found) return new Response(JSON.stringify({ ok: false, error: createError.message || 'User create failed and existing user not found' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       userId = found.id;
       const { error: updErr } = await supabaseAdmin.auth.admin.updateUserById(userId, { password });
-      if (updErr) return new Response(JSON.stringify({ ok: false, error: updErr.message }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  if (updErr) return new Response(JSON.stringify({ ok: false, error: updErr.message }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Ensure profile row exists in users table
@@ -102,8 +112,8 @@ serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, userId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ ok: true, userId }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e: any) {
-    return new Response(JSON.stringify({ ok: false, error: e?.message || 'Unexpected error' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ ok: false, error: e?.message || 'Unexpected error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
