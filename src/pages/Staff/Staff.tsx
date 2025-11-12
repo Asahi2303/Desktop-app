@@ -644,7 +644,7 @@ const Staff: React.FC = () => {
             label="New Password"
             value={setPwValue}
             onChange={(e) => setSetPwValue(e.target.value)}
-            helperText="Tip: In web app mode, leave blank to send a password reset email instead."
+            helperText="This will set the password immediately (works in desktop and web)."
           />
         </DialogContent>
         <DialogActions>
@@ -653,27 +653,13 @@ const Staff: React.FC = () => {
             variant="contained"
             onClick={async () => {
               try {
-                const anyWindow: any = window as any;
-                const hasDesktopAdmin = !!anyWindow?.electronAPI?.admin?.createOrUpdateUserWithPassword;
-                if (hasDesktopAdmin) {
-                  if (!setPwEmail || !setPwValue) {
-                    setError('Email and password are required');
-                    return;
-                  }
-                  // Desktop app: set password directly via admin bridge
-                  await createOrUpdateUserWithPassword({ email: setPwEmail, password: setPwValue });
-                  setSuccess('Credentials saved. The user can log in now.');
-                } else {
-                  if (!setPwEmail) {
-                    setError('Email is required');
-                    return;
-                  }
-                  // Web app fallback: send reset email the user can use to set a new password
-                  const redirectTo = `${window.location.origin}/finish-signup`;
-                  const { error } = await supabaseClient.auth.resetPasswordForEmail(setPwEmail, { redirectTo });
-                  if (error) throw error;
-                  setSuccess('Password reset email sent. Ask the user to check their inbox.');
+                if (!setPwEmail || !setPwValue) {
+                  setError('Email and password are required');
+                  return;
                 }
+                // Universal: uses Electron admin bridge if available; otherwise invokes Edge Function
+                await createOrUpdateUserWithPassword({ email: setPwEmail, password: setPwValue });
+                setSuccess('Password updated. The user can log in now.');
                 setSetPwDialogOpen(false);
                 setSetPwValue('');
               } catch (e: any) {
