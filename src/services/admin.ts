@@ -77,5 +77,15 @@ export async function createOrUpdateUserWithPassword(params: { email: string; pa
   if (!res?.ok) throw new Error(asMessage(res?.error, 'Failed to create/update user credentials'));
     return res.userId as string;
   }
-  throw new Error('Admin credential management is only available in the desktop app environment.');
+  // Web fallback: call Supabase Edge Function (secured, server-side service role)
+  try {
+    const { data, error } = await supabaseClient.functions.invoke('create-user', {
+      body: { email, password, name, role },
+    });
+    if (error) throw new Error(asMessage(error, 'Failed to create/update user credentials'));
+    if (!data?.ok) throw new Error(asMessage(data?.error, 'Failed to create/update user credentials'));
+    return (data.userId as string) || '';
+  } catch (e: any) {
+    throw new Error(asMessage(e, 'Failed to create/update user credentials'));
+  }
 }

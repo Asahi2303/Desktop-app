@@ -225,3 +225,37 @@ After successful setup, you can:
 5. Configure monitoring and alerts
 
 Your Jolly Children Academic Center application is now connected to Supabase! 🎉
+
+## Edge Function: Create Auth Users from Web (Optional)
+
+To create/update Supabase Auth users securely from the web app (without exposing service keys), deploy the provided edge function.
+
+Files:
+- `supabase/functions/create-user/index.ts`
+
+What it does:
+- Accepts `{ email, password, name?, role? }`
+- Creates the Auth user (or updates password if user exists)
+- Sets user metadata `{ name, role }` and ensures a corresponding row exists in the `public.users` table
+
+Security:
+- Runs with the Service Role on the server. Only call it from an Admin session in your app.
+
+Deploy steps:
+1. Install Supabase CLI: https://supabase.com/docs/guides/cli
+2. Link your project (once):
+   ```powershell
+   supabase link --project-ref <your-project-ref>
+   ```
+3. Deploy the function:
+   ```powershell
+   supabase functions deploy create-user
+   ```
+4. In the Supabase Dashboard → Project Settings → Functions, ensure the environment includes `SUPABASE_SERVICE_ROLE_KEY` (it’s present by default in hosted Edge runtime). No client changes needed.
+
+Client usage:
+- The app calls this function automatically when running in a browser (no Electron) via `supabase.functions.invoke('create-user', ...)` from `src/services/admin.ts`.
+- In the desktop app, it still uses the Electron admin bridge.
+
+Notes:
+- Your IDE may show TypeScript warnings for `supabase/functions/*` due to Deno module imports; those are expected. The code runs in Supabase’s Deno environment.
