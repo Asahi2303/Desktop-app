@@ -86,6 +86,10 @@ export async function createOrUpdateUserWithPassword(params: { email: string; pa
     if (!data?.ok) throw new Error(asMessage(data?.error, 'Failed to create/update user credentials'));
     return (data.userId as string) || '';
   } catch (e: any) {
-    throw new Error(asMessage(e, 'Failed to create/update user credentials'));
+    const msg = asMessage(e, 'Failed to create/update user credentials');
+    if (/Failed to send request|fetch failed|404|ENOTFOUND|functions\s+not\s+enabled/i.test(msg)) {
+      throw new Error('Edge function "create-user" is not reachable. Please deploy it and try again.');
+    }
+    throw new Error(msg);
   }
 }
