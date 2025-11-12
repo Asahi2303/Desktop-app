@@ -347,7 +347,18 @@ const SectionsManager: React.FC = () => {
             ))}
             {gradeSections.length === 0 && (
               <Grid item xs={12}>
-                <Typography variant="body2" color="text.secondary">No sections for this grade and year yet.</Typography>
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                  <Typography variant="body2" color="text.secondary">No sections for this grade and year yet.</Typography>
+                  {!errorMsg && (
+                    <Typography variant="caption" color="text.secondary">
+                      If you expect sections here:
+                      1) Confirm the academic year matches rows in grade_sections.
+                      2) Ensure RLS policies allow SELECT for your role (or test in SQL Editor).
+                      3) Verify REACT_APP_SUPABASE_URL / REACT_APP_SUPABASE_ANON_KEY are set in your web environment.
+                      4) If the table is missing, run database/create-grade-sections-table.sql and database/rls_policies_all.sql then reload.
+                    </Typography>
+                  )}
+                </Box>
               </Grid>
             )}
           </Grid>
